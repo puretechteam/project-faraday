@@ -8,6 +8,7 @@ from ..models.identity_entry import IdentityEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_email, validate_required_field
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock
 
 
 class IdentitySection:
@@ -44,9 +45,14 @@ class IdentitySection:
         self.email_var = tk.StringVar()
         ttk.Entry(form_frame, textvariable=self.email_var, width=50).grid(row=4, column=1, padx=5, pady=5, sticky=tk.EW)
         
-        ttk.Label(form_frame, text="Note:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(form_frame, text="SSN (optional):").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.ssn_var = tk.StringVar()
+        ssn_entry = ttk.Entry(form_frame, textvariable=self.ssn_var, width=50, show="*")
+        ssn_entry.grid(row=5, column=1, padx=5, pady=5, sticky=tk.EW)
+        
+        ttk.Label(form_frame, text="Note:").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.note_var = tk.StringVar()
-        ttk.Entry(form_frame, textvariable=self.note_var, width=50).grid(row=5, column=1, padx=5, pady=5, sticky=tk.EW)
+        ttk.Entry(form_frame, textvariable=self.note_var, width=50).grid(row=6, column=1, padx=5, pady=5, sticky=tk.EW)
         
         form_frame.columnconfigure(1, weight=1)
         
@@ -73,6 +79,7 @@ class IdentitySection:
         ttk.Button(list_button_frame, text="View Selected", command=self._view_selected).pack(side=tk.LEFT, padx=5)
         ttk.Button(list_button_frame, text="Copy Email", command=lambda: self._copy_field("email")).pack(side=tk.LEFT, padx=5)
         ttk.Button(list_button_frame, text="Copy Phone", command=lambda: self._copy_field("phone")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(list_button_frame, text="Copy SSN", command=lambda: self._copy_field("social_security_number")).pack(side=tk.LEFT, padx=5)
         ttk.Button(list_button_frame, text="Delete Selected", command=self._delete_selected).pack(side=tk.LEFT, padx=5)
         self._refresh_list()
     
@@ -89,11 +96,11 @@ class IdentitySection:
             messagebox.showerror("Error", error)
             return
         
-        valid, error = validate_email(email)
-        if not valid and error:
-            # Non-blocking: just warn
-            if not messagebox.askyesno("Warning", f"{error}\n\nContinue anyway?"):
-                return
+        if email:
+            valid, error = validate_email(email)
+            if not valid and error:
+                if not messagebox.askyesno("Warning", f"{error}\n\nContinue anyway?"):
+                    return
         
         try:
             self.vault_manager.add_entry(IdentityEntry(
@@ -102,6 +109,7 @@ class IdentitySection:
                 phone=phone,
                 date_of_birth=dob,
                 email=email,
+                social_security_number=self.ssn_var.get().strip(),
                 site_note=self.note_var.get().strip()
             ))
             self._clear_form()
@@ -117,6 +125,7 @@ class IdentitySection:
         self.phone_var.set("")
         self.dob_var.set("")
         self.email_var.set("")
+        self.ssn_var.set("")
         self.note_var.set("")
     
     def _refresh_list(self):
@@ -154,12 +163,21 @@ class IdentitySection:
             if not entry or not isinstance(entry, IdentityEntry):
                 messagebox.showerror("Error", "Entry not found or invalid type")
                 return
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nFull Name: {entry.full_name}\nAddress: {entry.address}\nPhone: {entry.phone}\nDate of Birth: {entry.date_of_birth}\nEmail: {entry.email}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            has_ssn = bool(getattr(entry, "social_security_number", "").strip())
+            ssn_disp = "Yes (use Copy SSN)" if has_ssn else "(not set)"
+            messagebox.showinfo(
+                "Entry Details",
+                f"Entry ID: {entry.entry_id}\nFull Name: {entry.full_name}\nAddress: {entry.address}\n"
+                f"Phone: {entry.phone}\nDate of Birth: {entry.date_of_birth}\nEmail: {entry.email}\n"
+                f"SSN on file: {ssn_disp}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}",
+            )
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
     
     def _copy_field(self, field_name: str):
         """Copy field value to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -181,6 +199,8 @@ class IdentitySection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

@@ -1,9 +1,9 @@
 # Vault File Format Specification
 
-###### Project Faraday - Copyright (C) 2026 Tanner Lucier
+###### Faraday - Copyright (C) 2026 Tanner Lucier
 
 
-Project Faraday stores all encrypted data in a single vault file. The vault file format is versioned to allow for future format changes while maintaining compatibility.
+Faraday stores all encrypted data in a single vault file. The vault file format is versioned to allow for future format changes while maintaining compatibility.
 
 ## File Structure
 
@@ -123,6 +123,7 @@ The encrypted payload (after decryption) is CBOR-encoded and contains:
     "phone": str,
     "date_of_birth": str,
     "email": str,
+    "social_security_number": str,  # Optional SSN field
     "site_note": str,
     "created": str,
     "modified": str
@@ -170,6 +171,7 @@ The encrypted payload (after decryption) is CBOR-encoded and contains:
     "file_reference": str,    # UUID reference to encrypted file
     "file_size": int,         # File size in bytes
     "file_hash": str,         # SHA-256 hash (hex-encoded)
+    "category": str,          # Category (for example: General, ID, Driver License)
     "upload_timestamp": str,  # ISO format timestamp
     "site_note": str,
     "created": str,

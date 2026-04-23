@@ -11,10 +11,11 @@ from .password_generator import PasswordGeneratorDialog
 class PasswordDialog:
     """Dialog for entering password."""
     
-    def __init__(self, parent, title="Enter Password", prompt="Password:", confirm=False):
+    def __init__(self, parent, title="Enter Password", prompt="Password:", confirm=False, show_generate_password=True):
         """Initialize password dialog."""
         self.parent = parent
         self.result = None
+        self._show_generate_password = show_generate_password
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
         self.dialog.transient(parent)
@@ -48,7 +49,8 @@ class PasswordDialog:
             self.confirm_entry.pack(fill=tk.X, pady=(0, 10))
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X)
-        ttk.Button(button_frame, text="Generate Password", command=self._generate_password).pack(side=tk.LEFT)
+        if self._show_generate_password:
+            ttk.Button(button_frame, text="Generate Password", command=self._generate_password).pack(side=tk.LEFT)
         ttk.Button(button_frame, text="OK", command=self._ok).pack(side=tk.RIGHT, padx=(5, 0))
         ttk.Button(button_frame, text="Cancel", command=self._cancel).pack(side=tk.RIGHT)
     

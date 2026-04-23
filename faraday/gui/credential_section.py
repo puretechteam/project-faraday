@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox
 from ..models.credential_entry import CredentialEntry
 from ..vault.manager import VaultManager
 from .password_generator import PasswordGeneratorDialog
+from .action_guard import require_action_unlock, show_scrollable_secret_dialog
 
 
 class CredentialSection:
@@ -108,22 +109,33 @@ class CredentialSection:
         return item["tags"][0] if item.get("tags") else None
     
     def _view_selected(self):
-        """View selected entry details."""
+        """View selected entry details (password shown in scrollable window)."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
             return
         try:
             entry = self.vault_manager.get_entry(entry_id)
-            if not entry:
-                messagebox.showerror("Error", "Entry not found")
+            if not entry or not isinstance(entry, CredentialEntry):
+                messagebox.showerror("Error", "Entry not found or invalid type")
                 return
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nUsername: {entry.username}\nPassword: {'*' * len(entry.password)}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            body = (
+                f"Entry ID: {entry.entry_id}\n"
+                f"Username: {entry.username}\n"
+                f"Password:\n{entry.password}\n\n"
+                f"Note: {entry.site_note}\n"
+                f"Created: {entry.created}\nModified: {entry.modified}"
+            )
+            show_scrollable_secret_dialog(self.frame, "Credential", body)
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
     
     def _copy_password(self):
         """Copy password of selected entry to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -143,6 +155,8 @@ class CredentialSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

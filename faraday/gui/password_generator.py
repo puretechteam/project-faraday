@@ -6,6 +6,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ..generator.password import PasswordGenerator
 from .icon_helper import set_window_icon
+from .ui_theme import config_to_merged, load_theme_config, theme_toplevel_window
+
+_DEFAULT_THEME_CFG = {"preset": "dark", "colors": {}, "font_scale": 100, "reduced_motion": False}
 
 
 class PasswordGeneratorDialog:
@@ -22,6 +25,8 @@ class PasswordGeneratorDialog:
         self.dialog.grab_set()
         set_window_icon(self.dialog)
         self.dialog.option_add('*TkEntry*show', '')
+        _, merged, _, _ = config_to_merged(load_theme_config() or _DEFAULT_THEME_CFG)
+        theme_toplevel_window(self.dialog, merged)
         self._create_widgets()
         self.dialog.update_idletasks()
         x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.dialog.winfo_width() // 2)

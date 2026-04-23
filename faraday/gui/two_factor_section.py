@@ -8,6 +8,7 @@ from ..models.two_factor_entry import TwoFactorEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_required_field
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock, show_scrollable_secret_dialog
 
 
 class TwoFactorSection:
@@ -26,7 +27,7 @@ class TwoFactorSection:
             "This entry contains highly sensitive 2FA/recovery codes.\n\n"
             "These codes can be used to bypass two-factor authentication.\n"
             "Ensure you keep this data secure.\n\n"
-            "Continue with creation?"
+            "Continue?"
         )
     
     def _create_widgets(self):
@@ -74,6 +75,7 @@ class TwoFactorSection:
         list_button_frame.pack(fill=tk.X, padx=10)
         ttk.Button(list_button_frame, text="Refresh", command=self._refresh_list).pack(side=tk.LEFT, padx=5)
         ttk.Button(list_button_frame, text="View Selected", command=self._view_selected).pack(side=tk.LEFT, padx=5)
+        ttk.Button(list_button_frame, text="Copy backup codes", command=self._copy_backup_codes).pack(side=tk.LEFT, padx=5)
         ttk.Button(list_button_frame, text="Delete Selected", command=self._delete_selected).pack(side=tk.LEFT, padx=5)
         self._refresh_list()
     
@@ -145,31 +147,67 @@ class TwoFactorSection:
         return item["tags"][0] if item.get("tags") else None
     
     def _view_selected(self):
-        """View selected entry details."""
+        """View selected entry details (scrollable; OS message boxes truncate long code lists)."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
             return
-        
-        # Show warning before viewing critical entry
-        entry = self.vault_manager.get_entry(entry_id)
-        if entry and hasattr(entry, 'sensitivity_level') and entry.sensitivity_level == "critical":
-            if not self._show_sensitivity_warning():
-                return
-        
         try:
             entry = self.vault_manager.get_entry(entry_id)
             if not entry or not isinstance(entry, TwoFactorEntry):
                 messagebox.showerror("Error", "Entry not found or invalid type")
                 return
-            codes_display = '\n'.join(entry.backup_codes) if entry.backup_codes else "(No codes)"
-            totp_display = "***" if entry.totp_secret else "(None)"
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nService Name: {entry.service_name}\nBackup Codes:\n{codes_display}\nTOTP Secret: {totp_display}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            if entry.sensitivity_level == "critical":
+                if not messagebox.askyesno(
+                    "Sensitive data",
+                    "You are about to show recovery codes and any TOTP secret on screen.\n\nContinue?",
+                ):
+                    return
+            codes_display = "\n".join(entry.backup_codes) if entry.backup_codes else "(No backup codes stored)"
+            ts = (entry.totp_secret or "").strip()
+            totp_display = ts if ts else "(None)"
+            body = (
+                f"Entry ID: {entry.entry_id}\n"
+                f"Service: {entry.service_name}\n"
+                f"Note: {entry.site_note}\n"
+                f"Created: {entry.created}\n"
+                f"Modified: {entry.modified}\n\n"
+                f"--- Backup codes (one per line) ---\n{codes_display}\n\n"
+                f"--- TOTP secret (if stored) ---\n{totp_display}\n"
+            )
+            show_scrollable_secret_dialog(self.frame, f"2FA - {entry.service_name}", body)
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
+
+    def _copy_backup_codes(self):
+        """Copy all backup codes to the clipboard (newline separated)."""
+        if not require_action_unlock(self.frame):
+            return
+        entry_id = self._get_selected_id()
+        if not entry_id:
+            messagebox.showwarning("Warning", "No entry selected")
+            return
+        try:
+            entry = self.vault_manager.get_entry(entry_id)
+            if not entry or not isinstance(entry, TwoFactorEntry):
+                messagebox.showerror("Error", "Entry not found or invalid type")
+                return
+            if not entry.backup_codes:
+                messagebox.showwarning("Warning", "No backup codes in this entry")
+                return
+            root = self.frame.winfo_toplevel()
+            text = "\n".join(entry.backup_codes)
+            copy_to_clipboard(text, entry.sensitivity_level, root)
+            messagebox.showinfo("Copied", "Backup codes copied to clipboard (will clear automatically).")
+        except Exception as e:
+            messagebox.showerror("Clipboard Operation Failed", str(e))
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

@@ -8,6 +8,7 @@ from ..models.emergency_contact_entry import EmergencyContactEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_required_field, validate_email
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock
 
 
 class EmergencyContactSection:
@@ -175,6 +176,8 @@ class EmergencyContactSection:
     
     def _copy_field(self, field_name: str):
         """Copy field value to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -196,6 +199,8 @@ class EmergencyContactSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

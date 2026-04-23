@@ -5,6 +5,10 @@ Main GUI window for Project Faraday.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
+import shutil
+from datetime import datetime
+
+from cryptography.exceptions import InvalidTag
 
 from ..vault.manager import VaultManager
 from .crypto_section import CryptoSection
@@ -17,11 +21,22 @@ from .two_factor_section import TwoFactorSection
 from .api_key_section import ApiKeySection
 from .wifi_section import WifiSection
 from .document_section import DocumentSection
+from .threat_panel import ThreatModelPanel
 from .password_dialog import PasswordDialog
 from .tray_icon import TrayIcon, is_tray_available
 from .console_toggle import toggle_console
 from .icon_helper import set_window_icon
 from .vault_history import load_recent_vaults, save_recent_vault
+from .action_guard import menu_change_action_pin, menu_disable_action_pin, menu_enable_or_change_action_pin
+from .ui_theme import (
+    PRESET_LABELS,
+    ThemeSettingsDialog,
+    apply_saved_theme,
+    apply_theme_to_popup_menus,
+    merge_theme,
+    normalize_preset_id,
+    quick_apply_preset,
+)
 
 
 def get_vaults_directory():
@@ -37,14 +52,18 @@ class MainWindow:
     def __init__(self):
         """Initialize main window."""
         self.root = tk.Tk()
-        self.root.title("Project Faraday v1.0.0 - Password Vault")
+        self.root.title("Faraday 2.0.0")
         self.root.geometry("800x600")
         set_window_icon(self.root)
         self.root.option_add('*TkEntry*show', '')
+        self._ui_style = ttk.Style(self.root)
+        self._themed_menus: list = []
+        self._theme_merged = apply_saved_theme(self.root, self._ui_style)
         self.vault_manager: VaultManager = None
         self.vault_path = None
         self.tray_icon = None
         self._create_menu()
+        apply_theme_to_popup_menus(self._themed_menus, self._theme_merged, root=self.root)
         self._create_widgets()
         if is_tray_available():
             self.tray_icon = TrayIcon(on_show=self._show_window, on_lock=self._lock_vault, on_exit=self._on_closing, on_toggle_console=toggle_console)
@@ -52,23 +71,60 @@ class MainWindow:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
     
     def _create_menu(self):
-        """Create menu bar."""
-        self.menubar = tk.Menu(self.root)
-        self.root.config(menu=self.menubar)
-        self.file_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="File", menu=self.file_menu)
-        self.file_menu.add_command(label="New Vault...", command=self._new_vault)
-        self.file_menu.add_command(label="Open Vault...", command=self._open_vault)
-        self.recent_menu = tk.Menu(self.file_menu, tearoff=0)
+        """In-window menu strip (ttk). Native winfo menubar ignores theme colors on Windows."""
+        self._themed_menus = []
+        bar = ttk.Frame(self.root)
+        bar.pack(side=tk.TOP, fill=tk.X)
+        self._menubar_frame = bar
+
+        def reg(m: tk.Menu) -> tk.Menu:
+            self._themed_menus.append(m)
+            return m
+
+        file_mb = ttk.Menubutton(bar, text="File")
+        self.file_menu = reg(tk.Menu(file_mb, tearoff=0))
+        file_mb.configure(menu=self.file_menu)
+        file_mb.pack(side=tk.LEFT, padx=(8, 0), pady=2)
+        self.file_menu.add_command(label="New Vault", command=self._new_vault)
+        self.file_menu.add_command(label="Open Vault", command=self._open_vault)
+        self.recent_menu = reg(tk.Menu(self.file_menu, tearoff=0))
         self.file_menu.add_cascade(label="Recent Vaults", menu=self.recent_menu)
         self._update_recent_menu()
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Backup Vault", command=self._backup_vault, state=tk.DISABLED)
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Lock Vault", command=self._lock_vault, state=tk.DISABLED)
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Exit", command=self._on_closing)
-        help_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="Help", menu=help_menu)
+
+        sec_mb = ttk.Menubutton(bar, text="Security")
+        security_menu = reg(tk.Menu(sec_mb, tearoff=0))
+        sec_mb.configure(menu=security_menu)
+        sec_mb.pack(side=tk.LEFT, padx=(4, 0), pady=2)
+        security_menu.add_command(label="Set up action PIN", command=lambda: menu_enable_or_change_action_pin(self.root))
+        security_menu.add_command(label="Change action PIN", command=lambda: menu_change_action_pin(self.root))
+        security_menu.add_command(label="Disable action PIN", command=lambda: menu_disable_action_pin(self.root))
+
+        theme_mb = ttk.Menubutton(bar, text="Theme")
+        theme_menu = reg(tk.Menu(theme_mb, tearoff=0))
+        theme_presets = reg(tk.Menu(theme_menu, tearoff=0))
+        theme_mb.configure(menu=theme_menu)
+        theme_mb.pack(side=tk.LEFT, padx=(4, 0), pady=2)
+        theme_menu.add_command(label="Theme settings", command=self._theme_settings)
+        theme_menu.add_cascade(label="Quick preset", menu=theme_presets)
+        for preset_id, preset_label in PRESET_LABELS:
+            theme_presets.add_command(
+                label=preset_label,
+                command=lambda p=preset_id: self._quick_theme_preset(p),
+            )
+
+        help_mb = ttk.Menubutton(bar, text="Help")
+        help_menu = reg(tk.Menu(help_mb, tearoff=0))
+        help_mb.configure(menu=help_menu)
+        help_mb.pack(side=tk.LEFT, padx=(4, 0), pady=2)
         help_menu.add_command(label="About", command=self._show_about)
+
+        ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(side=tk.TOP, fill=tk.X)
     
     def _create_widgets(self):
         """Create main window widgets."""
@@ -82,7 +138,7 @@ class MainWindow:
         self.credential_tab = None
         self.welcome_frame = ttk.Frame(main_frame)
         self.welcome_frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(self.welcome_frame, text="Please open or create a vault to begin", font=("Arial", 12)).pack(expand=True)
+        ttk.Label(self.welcome_frame, text="Please open or create a vault to begin").pack(expand=True)
     
     def _new_vault(self):
         """Create a new vault."""
@@ -108,7 +164,13 @@ class MainWindow:
             vault_path = filedialog.askopenfilename(title="Open Vault", initialdir=get_vaults_directory(), filetypes=[("Vault files", "*.vault"), ("All files", "*.*")])
             if not vault_path:
                 return
-        password = PasswordDialog(self.root, title="Open Vault", prompt="Enter master password:", confirm=False).get_password()
+        password = PasswordDialog(
+            self.root,
+            title="Open Vault",
+            prompt="Enter master password:",
+            confirm=False,
+            show_generate_password=False,
+        ).get_password()
         if not password:
             return
         try:
@@ -118,7 +180,19 @@ class MainWindow:
                 self.vault_manager.lock_vault()
             self._set_vault(manager, vault_path)
         except Exception as e:
-            messagebox.showerror("Vault Access Failed", f"Unable to open vault:\n{e}\n\nPlease verify the password and vault file integrity.")
+            hint = (
+                "If you are sure the password is correct, the encrypted file may be damaged "
+                "(for example from an interrupted save). Try restoring a copy from File History, "
+                "a previous backup, or shadow copies if available."
+            )
+            if isinstance(e, InvalidTag):
+                detail = (
+                    "Decryption failed: wrong master password, or the vault file was altered or corrupted.\n\n"
+                    + hint
+                )
+            else:
+                detail = f"{e}\n\nPlease verify the password and vault file integrity."
+            messagebox.showerror("Vault Access Failed", detail)
     
     def _set_vault(self, manager: VaultManager, vault_path: str):
         """Set vault and update UI."""
@@ -206,7 +280,56 @@ class MainWindow:
         self.document_section = DocumentSection(document_frame, self.vault_manager)
         self.document_section.frame.pack(fill=tk.BOTH, expand=True)
         self.notebook.add(document_frame, text="Documents")
+
+        threat_frame = ttk.Frame(self.notebook)
+        self.threat_panel = ThreatModelPanel(threat_frame, self.vault_manager, self.vault_path)
+        self.threat_panel.frame.pack(fill=tk.BOTH, expand=True)
+        self.notebook.add(threat_frame, text="Threat model")
     
+    def _backup_vault(self):
+        """Copy the encrypted vault file and attachment store to a user-chosen location."""
+        if not self.vault_manager or self.vault_manager.is_locked:
+            return
+        try:
+            self.vault_manager.save_vault()
+        except Exception as e:
+            messagebox.showerror("Backup Failed", f"Could not save the vault before backup:\n{e}")
+            return
+        base_name = os.path.basename(self.vault_path)
+        root_name, ext = os.path.splitext(base_name)
+        if not ext:
+            ext = ".vault"
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        initial = f"{root_name}_backup_{stamp}{ext}"
+        dest = filedialog.asksaveasfilename(
+            title="Backup Vault (encrypted copy)",
+            initialfile=initial,
+            defaultextension=ext,
+            filetypes=[("Vault files", "*.vault"), ("All files", "*.*")],
+        )
+        if not dest:
+            return
+        attachments_src = f"{self.vault_path}.attachments"
+        attachments_dest = f"{dest}.attachments"
+        try:
+            shutil.copy2(self.vault_path, dest)
+            if os.path.isdir(attachments_src):
+                if os.path.exists(attachments_dest):
+                    messagebox.showerror(
+                        "Backup Failed",
+                        "A file or folder with the attachment backup name already exists.\n"
+                        "Choose a different backup filename.",
+                    )
+                    return
+                shutil.copytree(attachments_src, attachments_dest)
+        except OSError as e:
+            messagebox.showerror("Backup Failed", str(e))
+            return
+        msg = f"Encrypted vault copied to:\n{dest}"
+        if os.path.isdir(attachments_src):
+            msg += f"\n\nAttachments copied to:\n{attachments_dest}"
+        messagebox.showinfo("Backup Complete", msg)
+
     def _lock_vault(self):
         """Lock vault."""
         if not self.vault_manager:
@@ -219,7 +342,7 @@ class MainWindow:
         main_frame = self.notebook.master
         self.welcome_frame = ttk.Frame(main_frame)
         self.welcome_frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(self.welcome_frame, text="Please open or create a vault to begin", font=("Arial", 12)).pack(expand=True)
+        ttk.Label(self.welcome_frame, text="Please open or create a vault to begin").pack(expand=True)
         self.status_var.set("Vault locked")
         self._update_menu_state()
         messagebox.showinfo("Locked", "Vault has been locked")
@@ -247,8 +370,18 @@ class MainWindow:
     
     def _update_menu_state(self):
         """Update menu item states based on vault status."""
+        unlocked = bool(self.vault_manager and not self.vault_manager.is_locked)
         self.file_menu.entryconfig("Lock Vault", state=tk.NORMAL if self.vault_manager else tk.DISABLED)
+        self.file_menu.entryconfig("Backup Vault", state=tk.NORMAL if unlocked else tk.DISABLED)
     
+    def _quick_theme_preset(self, preset_id: str) -> None:
+        quick_apply_preset(self.root, self._ui_style, preset_id, menus=self._themed_menus)
+        self._theme_merged = merge_theme(normalize_preset_id(preset_id), {})
+
+    def _theme_settings(self):
+        """Open theme dialog (same presets and colors as courier/FTP frontend)."""
+        ThemeSettingsDialog(self.root, self.root, self._ui_style, menus=self._themed_menus)
+
     def _show_about(self):
         """Show about dialog."""
         messagebox.showinfo("About", "Project Faraday\nOffline Password Vault\n\nVersion 1.0.0\n\nA secure, offline-first password vault\nfor storing credentials and crypto addresses.")

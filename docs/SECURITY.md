@@ -1,19 +1,19 @@
 # Security Documentation
 
-Project Faraday - Copyright (C) 2024 Tanner Lucier
+Faraday - Copyright (C) 2026 Tanner Lucier
 
 ## Threat Model
 
-Project Faraday is designed to protect against:
+Faraday is designed to protect against:
 
 - **Disk theft**: If someone gains physical or remote access to your vault file, they cannot decrypt it without your master password
 - **Offline brute-force attacks**: Enhanced Argon2id parameters make brute-force attacks computationally infeasible (years to decades on modern hardware)
 - **Temporary file recovery**: Secure deletion prevents recovery of temporary files created during vault operations
 - **Unauthorized file access**: Restrictive file permissions prevent other users from accessing your vault files
 
-## What Project Faraday Does NOT Protect Against
+## What Faraday Does NOT Protect Against
 
-Project Faraday **cannot** protect you from:
+Faraday **cannot** protect you from:
 
 - **Compromised operating system**: If your OS is compromised (malware, rootkits, etc.), an attacker may be able to access your vault while it's unlocked
 - **Keyloggers**: If keylogging software is installed, your master password may be captured
@@ -22,7 +22,7 @@ Project Faraday **cannot** protect you from:
 
 ## Python Memory Limitations
 
-**Important**: Python does not provide guarantees about secure memory wiping. While Project Faraday attempts to clear sensitive data from memory with multiple overwrite passes, Python's garbage collector and memory management may:
+**Important**: Python does not provide guarantees about secure memory wiping. While Faraday attempts to clear sensitive data from memory with multiple overwrite passes, Python's garbage collector and memory management may:
 
 - Keep copies of data in memory longer than expected
 - Not immediately overwrite memory when objects are deleted
@@ -54,7 +54,7 @@ Project Faraday **cannot** protect you from:
 
 ### Security Levels
 
-Project Faraday supports multiple security levels that balance security and performance:
+Faraday supports multiple security levels that balance security and performance:
 
 - **Low**: Faster unlock times, suitable for less sensitive data or older hardware
 - **Standard** (default): Recommended for most users, provides strong protection against brute-force attacks
@@ -65,7 +65,7 @@ New vaults use the "standard" level by default. Existing vaults with older param
 
 ## Offline-Only Design
 
-Project Faraday has **no network features**:
+Faraday has **no network features**:
 - No cloud sync
 - No update checks
 - No telemetry or analytics
@@ -116,7 +116,7 @@ The application verifies permissions when unlocking vaults and warns if permissi
 
 ## Security Checklist
 
-Before using Project Faraday in production, ensure:
+Before using Faraday in production, ensure:
 
 - [ ] You have a strong master password (20+ characters, unique)
 - [ ] Your system has full-disk encryption enabled

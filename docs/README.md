@@ -1,16 +1,16 @@
-# Project Faraday
+# Faraday
 
-Project Faraday - Copyright (C) 2026 Tanner Lucier
+Faraday - Copyright (C) 2026 Tanner Lucier
 
-A secure, offline-first password vault for storing credentials and cryptocurrency addresses. Built with Python, featuring both command-line and graphical interfaces.
+A secure, offline-first password vault for storing credentials and sensitive records. Built with Python, featuring both command-line and graphical interfaces.
 
 ## Overview
 
-Project Faraday is an enterprise-grade password management solution that prioritizes security and privacy. All encryption and key derivation operations are performed locally—no cloud services, network calls, or telemetry. Your data remains entirely under your control, stored in encrypted vault files that can be backed up and transferred securely.
+Faraday is an offline-first password management solution that prioritizes security and privacy. All encryption and key derivation operations are performed locally with no cloud services, network calls, or telemetry. Your data remains under your control in encrypted vault files that can be backed up and transferred securely.
 
-## Why Project Faraday?
+## Why Faraday?
 
-In an era where password managers are increasingly cloud-based and subscription-driven, Project Faraday fills a critical gap: **a truly offline, self-contained password vault that you can trust with your most sensitive credentials**.
+In an era where password managers are increasingly cloud-based and subscription-driven, Faraday fills a critical gap: **a truly offline, self-contained password vault that you can trust with your most sensitive credentials**.
 
 **The Problem:**
 - Cloud-based password managers require internet connectivity and trust in third-party services
@@ -20,7 +20,7 @@ In an era where password managers are increasingly cloud-based and subscription-
 - Desire for full control over your encrypted data
 
 **The Solution:**
-Project Faraday provides a professional-grade password management system that runs entirely on your local machine. Whether you're storing cryptocurrency wallet addresses, banking credentials, or any sensitive information, your data never leaves your device. The encrypted vault file is yours to back up, transfer, and secure as you see fit—no accounts, no subscriptions, no cloud dependencies.
+Faraday provides a local-first password management system that runs entirely on your machine. Whether you're storing cryptocurrency wallet addresses, banking credentials, or any sensitive information, your data never leaves your device. The encrypted vault file is yours to back up, transfer, and secure as you see fit.
 
 Perfect for:
 - **Privacy-conscious users** who want complete data sovereignty
@@ -36,7 +36,7 @@ The result is a fully functional, security-focused password vault that demonstra
 
 ## Table of Contents
 
-- [Why Project Faraday?](#why-project-faraday)
+- [Why Faraday?](#why-faraday)
 - [Features](#features)
 - [Security Architecture](#security-architecture)
   - [Threat Model](#threat-model)
@@ -63,10 +63,12 @@ The result is a fully functional, security-focused password vault that demonstra
 
 - **Offline-First Architecture**: Complete local operation with zero network dependencies
 - **Multi-Vault Support**: Create and manage multiple independent vaults with separate encryption keys
-- **Dual Entry Types**: Store cryptocurrency addresses and username/password credentials
+- **Broad Record Support**: Store credentials, notes, cards, identities, 2FA data, Wi-Fi records, documents, API keys, emergency contacts, and crypto addresses
 - **Advanced Password Generator**: Cryptographically secure generation with customizable character sets and exclusion rules
 - **Dual Interface**: Full-featured CLI for automation and GUI for interactive use
-- **Recent Vaults Management**: GUI maintains history of recently accessed vaults
+- **Recent Vaults Management**: GUI keeps local history of recently opened vaults
+- **Action PIN Guard (Optional)**: Add an extra unlock step for sensitive actions
+- **Threat Model Panel**: In-app educational tab with local Argon2 timing and metadata-only analysis
 - **System Tray Integration**: Optional system tray icon for quick access (configurable)
 - **Automatic Locking**: Configurable auto-lock after inactivity period
 - **Enterprise-Grade Cryptography**: Argon2id key derivation with configurable security levels and AES-256-GCM authenticated encryption
@@ -74,7 +76,7 @@ The result is a fully functional, security-focused password vault that demonstra
 
 ## Security Architecture
 
-Project Faraday implements industry-standard cryptographic primitives:
+Faraday implements industry-standard cryptographic primitives:
 
 - **Argon2id Key Derivation**: Configurable security levels (standard, high, maximum) with memory-hard parameters
 - **AES-256-GCM Encryption**: Authenticated encryption with unique nonces per operation
@@ -115,7 +117,7 @@ Project Faraday implements industry-standard cryptographic primitives:
    pip install -e .
    ```
 
-   This installs Project Faraday and creates a `faraday` command that works from anywhere.
+   This installs Faraday and creates a `faraday` command that works from anywhere.
 
 3. **Verify installation**:
    ```bash
@@ -233,23 +235,12 @@ faraday gui
 
 #### GUI Features
 
-- **File Menu:**
-  - **New Vault...**: Create a new vault file
-  - **Open Vault...**: Open an existing vault (automatically locks current vault if one is open)
-  - **Recent Vaults**: Quick access to recently opened vaults
-  - **Lock Vault**: Lock the current vault
-  - **Exit**: Close the application
-
-- **Two Tabs:**
-  - **Crypto Addresses**: For storing cryptocurrency addresses
-  - **Credentials**: For storing username/password combinations
-
-- **Features:**
-  - Add, view, and delete entries
-  - Password generator button in credentials section
-  - Status bar shows current vault name
-  - Auto-locks after 5 minutes of inactivity
-  - System tray icon (optional) for quick access
+- **Themed in-window menu strip**: `File`, `Security`, `Theme`, and `Help`
+- **File actions**: New vault, open vault, backup vault, recent vaults, lock vault, and exit
+- **Security actions**: Optional Action PIN setup/change/disable for protected operations
+- **Theme controls**: Theme settings and quick presets with local save/load behavior
+- **Sections**: Credentials, secure notes, cards, identities, 2FA, Wi-Fi, documents, API keys, emergency contacts, crypto, and threat model
+- **Core behavior**: Add/view/delete entries, password generation tools, status bar vault context, auto-lock after inactivity, optional tray access
 
 ## Detailed Examples
 
@@ -331,7 +322,7 @@ Vault files are encrypted and stored locally. The format is versioned - see [vau
 2. **Back up your vault file**: Store encrypted vault files in multiple safe locations
 3. **Lock when not in use**: The GUI auto-locks after 5 minutes, but you can lock manually
 4. **Use different vaults**: Separate work and personal data into different vaults
-5. **Keep your system secure**: Project Faraday cannot protect against compromised systems
+5. **Keep your system secure**: Faraday cannot protect against compromised systems
 6. **Read SECURITY.md**: Understand the threat model and limitations
 
 ## Troubleshooting

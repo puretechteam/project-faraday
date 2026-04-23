@@ -8,6 +8,7 @@ from ..models.wifi_entry import WifiEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_required_field
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock, show_scrollable_secret_dialog
 
 
 class WifiSection:
@@ -130,6 +131,8 @@ class WifiSection:
     
     def _view_selected(self):
         """View selected entry details."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -139,12 +142,19 @@ class WifiSection:
             if not entry or not isinstance(entry, WifiEntry):
                 messagebox.showerror("Error", "Entry not found or invalid type")
                 return
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nNetwork Name: {entry.network_name}\nPassword: {'*' * len(entry.password)}\nSecurity Type: {entry.security_type}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            body = (
+                f"Entry ID: {entry.entry_id}\nNetwork Name: {entry.network_name}\n"
+                f"Password:\n{entry.password}\nSecurity Type: {entry.security_type}\n"
+                f"Note: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}"
+            )
+            show_scrollable_secret_dialog(self.frame, f"Wi-Fi - {entry.network_name}", body)
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
     
     def _copy_password(self):
         """Copy password to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -162,6 +172,8 @@ class WifiSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

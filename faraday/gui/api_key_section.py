@@ -8,6 +8,7 @@ from ..models.api_key_entry import ApiKeyEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_required_field
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock
 
 
 class ApiKeySection:
@@ -171,6 +172,8 @@ class ApiKeySection:
     
     def _copy_api_key(self):
         """Copy API key to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -188,6 +191,8 @@ class ApiKeySection:
     
     def _copy_api_secret(self):
         """Copy API secret to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -208,6 +213,8 @@ class ApiKeySection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

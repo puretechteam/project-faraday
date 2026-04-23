@@ -8,6 +8,7 @@ from ..models.card_entry import CardEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_card_number, validate_cvv, validate_required_field
 from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock
 
 
 class CardSection:
@@ -196,6 +197,8 @@ class CardSection:
     
     def _copy_card_number(self):
         """Copy card number to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -213,6 +216,8 @@ class CardSection:
     
     def _copy_cvv(self):
         """Copy CVV to clipboard."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -230,6 +235,8 @@ class CardSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

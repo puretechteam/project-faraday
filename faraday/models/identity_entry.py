@@ -12,7 +12,7 @@ class IdentityEntry(BaseEntry):
     
     sensitivity_level = "normal"
     
-    def __init__(self, full_name: str, address: str, phone: str, date_of_birth: str, email: str, entry_id: Optional[str] = None, site_note: Optional[str] = None, created: Optional[datetime] = None, modified: Optional[datetime] = None):
+    def __init__(self, full_name: str, address: str, phone: str, date_of_birth: str, email: str, social_security_number: str = "", entry_id: Optional[str] = None, site_note: Optional[str] = None, created: Optional[datetime] = None, modified: Optional[datetime] = None):
         """Initialize identity entry."""
         super().__init__(entry_id, site_note, created, modified)
         self.full_name = full_name
@@ -20,6 +20,7 @@ class IdentityEntry(BaseEntry):
         self.phone = phone
         self.date_of_birth = date_of_birth
         self.email = email
+        self.social_security_number = social_security_number or ""
     
     def to_dict(self) -> dict:
         """Convert entry to dictionary for serialization."""
@@ -31,6 +32,7 @@ class IdentityEntry(BaseEntry):
             "phone": self.phone,
             "date_of_birth": self.date_of_birth,
             "email": self.email,
+            "social_security_number": self.social_security_number,
             "site_note": self.site_note,
             "created": self.created.isoformat(),
             "modified": self.modified.isoformat()
@@ -44,7 +46,8 @@ class IdentityEntry(BaseEntry):
             address=data["address"],
             phone=data["phone"],
             date_of_birth=data["date_of_birth"],
-            email=data["email"],
+            email=data.get("email") or "",
+            social_security_number=data.get("social_security_number", ""),
             entry_id=data.get("entry_id"),
             site_note=data.get("site_note"),
             created=datetime.fromisoformat(data["created"]) if "created" in data else None,

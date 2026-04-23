@@ -130,8 +130,10 @@ class VaultManager:
     def lock_vault(self):
         """Lock vault and clear sensitive data from memory."""
         self._stop_auto_lock.set()
-        if self._auto_lock_thread:
-            self._auto_lock_thread.join(timeout=1.0)
+        # Auto-lock calls lock_vault from _auto_lock_worker; joining the current thread raises RuntimeError.
+        worker = self._auto_lock_thread
+        if worker and worker is not threading.current_thread():
+            worker.join(timeout=1.0)
         if self.master_key:
             key_array = bytearray(self.master_key)
             for _ in range(3):  # Multiple overwrite passes

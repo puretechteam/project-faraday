@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ..models.crypto_entry import CryptoEntry
 from ..vault.manager import VaultManager
+from .action_guard import require_action_unlock
 
 
 class CryptoSection:
@@ -108,6 +109,8 @@ class CryptoSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

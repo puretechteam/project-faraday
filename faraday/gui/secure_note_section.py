@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from ..models.secure_note_entry import SecureNoteEntry
 from ..vault.manager import VaultManager
-from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock, show_scrollable_secret_dialog
 
 
 class SecureNoteSection:
@@ -104,6 +104,8 @@ class SecureNoteSection:
     
     def _view_selected(self):
         """View selected entry details."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -114,12 +116,18 @@ class SecureNoteSection:
                 messagebox.showerror("Error", "Entry not found or invalid type")
                 return
             title_display = entry.title if entry.title else "(No title)"
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nTitle: {title_display}\nContent:\n{entry.content}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            body = (
+                f"Entry ID: {entry.entry_id}\nTitle: {title_display}\n\n--- Content ---\n{entry.content}\n\n"
+                f"Created: {entry.created}\nModified: {entry.modified}"
+            )
+            show_scrollable_secret_dialog(self.frame, f"Secure note - {title_display}", body)
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")

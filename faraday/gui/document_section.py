@@ -8,7 +8,17 @@ import os
 from ..models.document_entry import DocumentEntry
 from ..vault.manager import VaultManager
 from ..vault.validation import validate_required_field
-from .clipboard_helper import copy_to_clipboard
+from .action_guard import require_action_unlock
+
+DOCUMENT_CATEGORIES = (
+    "General",
+    "ID / Driver License",
+    "Legal",
+    "Financial",
+    "Medical",
+    "Tax",
+    "Other",
+)
 
 
 class DocumentSection:
@@ -43,9 +53,16 @@ class DocumentSection:
         file_label = ttk.Label(form_frame, textvariable=self.file_path_var, foreground="gray")
         file_label.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
         
-        ttk.Label(form_frame, text="Note:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(form_frame, text="Category:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.category_var = tk.StringVar(value=DOCUMENT_CATEGORIES[0])
+        self.category_combo = ttk.Combobox(
+            form_frame, textvariable=self.category_var, values=DOCUMENT_CATEGORIES, width=47, state="readonly"
+        )
+        self.category_combo.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+        
+        ttk.Label(form_frame, text="Note:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.note_var = tk.StringVar()
-        ttk.Entry(form_frame, textvariable=self.note_var, width=50).grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+        ttk.Entry(form_frame, textvariable=self.note_var, width=50).grid(row=2, column=1, padx=5, pady=5, sticky=tk.EW)
         
         form_frame.columnconfigure(1, weight=1)
         
@@ -57,11 +74,12 @@ class DocumentSection:
         
         list_frame = ttk.LabelFrame(self.frame, text="Documents", padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        columns = ("ID", "Filename", "Size", "Type", "Modified")
+        columns = ("ID", "Category", "Filename", "Size", "Type", "Modified")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=10)
         for col in columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=200 if col == "ID" else 150)
+            w = 200 if col == "ID" else 130 if col == "Category" else 150
+            self.tree.column(col, width=w)
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -125,12 +143,16 @@ class DocumentSection:
             mime_type = mime_type or "application/octet-stream"
             
             # Create document entry
+            cat = self.category_var.get().strip() or "General"
+            if cat not in DOCUMENT_CATEGORIES:
+                cat = "General"
             self.vault_manager.add_entry(DocumentEntry(
                 filename=filename,
                 mime_type=mime_type,
                 file_reference=file_uuid,
                 file_size=file_size,
                 file_hash=file_hash,
+                category=cat,
                 site_note=self.note_var.get().strip()
             ))
             
@@ -144,6 +166,7 @@ class DocumentSection:
         """Clear entry form."""
         self._selected_file_path = None
         self.file_path_var.set("(No file selected)")
+        self.category_var.set(DOCUMENT_CATEGORIES[0])
         self.note_var.set("")
     
     def _format_file_size(self, size_bytes: int) -> str:
@@ -163,6 +186,7 @@ class DocumentSection:
             for entry in self.vault_manager.list_entries(entry_type="document"):
                 self.tree.insert("", tk.END, values=(
                     entry.entry_id,
+                    getattr(entry, "category", "General"),
                     entry.filename[:40] + "..." if len(entry.filename) > 40 else entry.filename,
                     self._format_file_size(entry.file_size),
                     entry.mime_type[:20] + "..." if len(entry.mime_type) > 20 else entry.mime_type,
@@ -197,12 +221,20 @@ class DocumentSection:
             if not entry or not isinstance(entry, DocumentEntry):
                 messagebox.showerror("Error", "Entry not found or invalid type")
                 return
-            messagebox.showinfo("Entry Details", f"Entry ID: {entry.entry_id}\nFilename: {entry.filename}\nMIME Type: {entry.mime_type}\nFile Size: {self._format_file_size(entry.file_size)}\nFile Hash: {entry.file_hash}\nUploaded: {entry.upload_timestamp}\nNote: {entry.site_note}\nCreated: {entry.created}\nModified: {entry.modified}")
+            messagebox.showinfo(
+                "Entry Details",
+                f"Entry ID: {entry.entry_id}\nCategory: {getattr(entry, 'category', 'General')}\nFilename: {entry.filename}\n"
+                f"MIME Type: {entry.mime_type}\nFile Size: {self._format_file_size(entry.file_size)}\n"
+                f"File Hash: {entry.file_hash}\nUploaded: {entry.upload_timestamp}\nNote: {entry.site_note}\n"
+                f"Created: {entry.created}\nModified: {entry.modified}",
+            )
         except Exception as e:
             messagebox.showerror("Entry Access Failed", f"Unable to retrieve entry details:\n{e}")
     
     def _download_document(self):
         """Download and decrypt document."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
@@ -245,6 +277,8 @@ class DocumentSection:
     
     def _delete_selected(self):
         """Delete selected entry."""
+        if not require_action_unlock(self.frame):
+            return
         entry_id = self._get_selected_id()
         if not entry_id:
             messagebox.showwarning("Warning", "No entry selected")
