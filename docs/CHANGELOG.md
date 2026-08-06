@@ -9,6 +9,31 @@ vault cryptography, the data model, the password generator, or the CLI. The
 backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
 `faraday/cli.py`) is untouched.
 
+### Bug fixes
+- Fixed a critical lockup on the locked screen: clicking a recent vault (or
+  opening a vault via the file picker) froze the entire application because the
+  master-password dialog never appeared.
+  - **Root cause:** in `faraday/gui/widgets/dialogs.py`, `Dialog.__init__`
+    called `transient()` and then `overrideredirect(True)`. On Windows, Tk
+    rebuilds the wrapper HWND as an unowned `WS_CHILD` child-of-desktop, so the
+    modal password dialog was created with no owner, could not be activated,
+    never received focus, and sank behind the main window while holding a modal
+    grab — every click was swallowed. Diagnostics showed window style
+    `0x56000008` (`WS_CHILD`), owner `0x0`, z-order far behind the main window,
+    and CPU at ~0.5% (the app was deaf, not hung). The access log recorded 17
+    sessions with 20 `unlock_cancelled` and 0 `unlock_succeeded`.
+  - **Fix:** skip `transient()` on Windows and instead (re)establish a real
+    `GWLP_HWNDPARENT` owner link after `overrideredirect(True)`, re-asserted in
+    `__init__`, `fit()`, and `show()`; moved `grab_set()` to the end of
+    construction (wrapped so a half-built dialog can never leak a grab); clamped
+    `_center_over` to the work area (a minimized parent previously spawned an
+    off-screen dialog — the same freeze); wrapped `_prompt_password` in
+    `try/finally`; fixed the `native_dialog` topmost-restore; and re-applied the
+    taskbar style after `overrideredirect` toggles.
+  - Added `scripts/check_dialog_stacking.py`, a Win32 z-order +
+    `WindowFromPoint` regression guard, because Tk-level checks
+    (`winfo_viewable`) could not detect this class of bug.
+
 ### Design system
 - Introduced a new calm, minimalist token system built on top of the existing
   merged theme palette:
@@ -54,10 +79,6 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
   threat model. Each view exposes a `filter(query)` method wired to the topbar
   search.
 
-### Restyle of core dialogs
-- Unlock screen, password dialog (reveal + generate), About dialog, and theme
-  settings dialog were restyled onto the shared design system.
-
 ### Theme system preserved
 - All 11 presets, per-color overrides, and the live font-scale control continue
   to apply across the new interface. The `ui_theme` public API is unchanged and
@@ -74,8 +95,6 @@ change** (product remains 3.0.0) and **no cryptography or behavior changes** —
 - `CardList` inner-frame width now syncs to the scroll region, with a corrected
   scroll-region calculation and a localized mousewheel binding.
 - Sidebar width and collapse state are now honored on layout.
-- Unlock screen is centered with an explicit size.
-- Status bar presentation polished for consistent spacing and contrast.
 - Restored the configurable password generator: new `PasswordGeneratorDialog`
   (length 8–64, uppercase/lowercase/digits/symbols, exclude-similar, exclude
   field, live preview, copy/use) wired into the Credentials section (and Wi-Fi

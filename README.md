@@ -7,6 +7,7 @@
 ![encryption](https://img.shields.io/badge/encryption-AES--256--GCM-orange)
 ![kdf](https://img.shields.io/badge/KDF-Argon2id-informational)
 ![telemetry](https://img.shields.io/badge/telemetry-none-blueviolet)
+![made](https://img.shields.io/badge/made%20by-Pure%20Tech-2ea043)
 
 Copyright © 2026 Pure Tech
 
@@ -267,17 +268,16 @@ faraday gui
 
 #### GUI Features
 
-- **Themed in-window menu strip**: `File`, `Security`, `Theme`, and `Help`
+- **Borderless app shell**: custom-themed window chrome with a collapsible left
+  sidebar, a topbar (search, vault name, lock control, theme quick-control), a
+  centered **Unlock screen** with a recent-vaults list (Open / New Vault), and a
+  status bar showing the active vault
+- **More menu**: a Topbar "More" menu (icon button + themed popup) holds the
+  `File`, `Security`, and `Theme` actions — the old in-window `File`/`Security`/
+  `Theme`/`Help` menu strip was removed in 3.0.0
 - **File actions**: New vault, open vault, backup vault, recent vaults, lock vault, and exit
 - **Security actions**: Optional Action PIN setup/change/disable for protected operations
 - **Theme controls**: Theme settings and quick presets with local save/load behavior
-
-- **File Menu:**
-   - **New Vault...**: Create a new vault file
-   - **Open Vault...**: Open an existing vault (automatically locks current vault if one is open)
-   - **Recent Vaults**: Quick access to recently opened vaults
-   - **Lock Vault**: Lock the current vault
-   - **Exit**: Close the application
 
 - **Sections**: Credentials, secure notes, cards, identities, 2FA, Wi-Fi, documents, API keys, emergency contacts, crypto, and Threat Model
 
@@ -285,7 +285,7 @@ faraday gui
    - Add, view, and delete entries
    - Password generator button in credentials section
    - Status bar shows current vault name
-   - Auto-locks after 5 minutes of inactivity
+   - Auto-locks after a configurable inactivity period
    - System tray icon (optional) for quick access
 
 ## Detailed Examples
@@ -358,7 +358,7 @@ Vault files are encrypted and stored locally. The format is versioned — see [v
 ## File Locations
 
 - **Vault files**: Created in the `vaults/` folder in the project root (or specified path)
-- **Recent vaults history**: `.faraday_vault_history.json` (in current directory)
+- **Recent vaults history**: stored under the app data directory (e.g. `%LOCALAPPDATA%\FaradayVault\` on Windows)
 - **Default vault**: `vaults/faraday.vault` (if no `--vault` flag is used)
 - **Vaults directory**: Automatically created if it doesn't exist
 
@@ -366,7 +366,7 @@ Vault files are encrypted and stored locally. The format is versioned — see [v
 
 1. **Use strong master passwords**: Your vault is only as secure as your master password
 2. **Back up your vault file**: Store encrypted vault files in multiple safe locations
-3. **Lock when not in use**: The GUI auto-locks after 5 minutes, but you can lock manually
+3. **Lock when not in use**: The GUI auto-locks after a configurable inactivity period, but you can lock manually
 4. **Use different vaults**: Separate work and personal data into different vaults
 5. **Keep your system secure**: Project Faraday cannot protect against compromised systems
 6. **Read SECURITY.md**: Understand the threat model and limitations

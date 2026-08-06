@@ -18,7 +18,7 @@ setup(
     description="An offline-first password vault for storing credentials and cryptocurrency addresses",
     long_description=long_description if long_description else "An offline-first password vault",
     long_description_content_type="text/markdown" if long_description else None,
-    url="https://github.com/puretech/project-faraday",
+    url="https://github.com/puretechteam/project-faraday",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

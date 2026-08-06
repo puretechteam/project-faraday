@@ -53,7 +53,79 @@ faraday.vault
 .faraday_vault_history.json
 vaults/
 
+# ---- Secrets / credentials (defence in depth) ----
+.env
+.env.*
+*.env
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.crt
+*.csr
+*.der
+*.ovpn
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.asc
+*.gpg
+secrets.*
+*secrets.json
+*secrets.yaml
+*secrets.yml
+credentials.*
+.netrc
+.pypirc
+.aws/
+.azure/
+.gcloud/
+gcp-*.json
+service-account*.json
+
+# ---- Faraday local state (normally in %LOCALAPPDATA%; guards portable/XDG runs) ----
+access_log.json
+action_guard.json
+gui_theme.json
+*.vault.bak
+*.vault.backup
+*_backup_*.vault
+*.enc
+
+# ---- Plaintext exports / dumps (would contain decrypted secrets) ----
+*.csv
+*.sqlite
+*.sqlite3
+*.db
+export*.json
+vault_export*
+
+# ---- Logs & temp ----
+*.log
+logs/
+*.bak
+*.orig
+*.rej
+*.tmp
+*.swn
+
+# ---- Editor / AI tooling ----
+.cursor/
+.claude/
+.kilo/
+.aider*
+
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+.Spotlight-V100
+.Trashes
+._*
 
