@@ -1,0 +1,3 @@
+- Generate password outside of vault
+- Copied entries do not clear after 30 seconds, should also be able to copy any parameter of an entry
+- View all entries, instead of just copying
