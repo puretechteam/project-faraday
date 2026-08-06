@@ -8,11 +8,16 @@ API contracts (consumed by ``main_window.py`` / ``credential_section.py``):
     ThemedPasswordDialog(parent, title="Unlock Vault", confirm=False,
                           show_generate=True) -> .show() -> str | None
     PasswordGeneratorDialog(parent, title="Password Generator") -> .show() -> str | None
+
+This module also exposes the small Win32 window helpers the dialogs need
+(:func:`native_hwnd`, :func:`set_window_owner`, :func:`work_area`); they are
+shared with ``main_window`` so the same logic is not written twice.
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional
+import os
+from typing import Callable, Dict, Optional, Tuple
 
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -30,6 +35,176 @@ from .surface import RoundedSurface
 _SIMILAR_CHARS = "ilIoO0L1|`'\"{}[]()/\\"
 
 
+# ---------------------------------------------------------------------------
+# Win32 window helpers
+# ---------------------------------------------------------------------------
+# ``wm overrideredirect`` makes Tk DESTROY and RE-CREATE a toplevel's wrapper
+# HWND as an unowned ``WS_POPUP | WS_EX_TOOLWINDOW`` window parented to the
+# desktop. That throws away the owner relationship ``transient()`` established,
+# and ownership is the only thing on Windows that guarantees a window stays
+# above another one. These helpers put the owner back.
+_GWLP_HWNDPARENT = -8
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+_SWP_NOZORDER = 0x0004
+_SWP_NOACTIVATE = 0x0010
+_SWP_FRAMECHANGED = 0x0020
+_SPI_GETWORKAREA = 0x0030
+_MONITOR_DEFAULTTONEAREST = 0x0002
+
+
+def _as_handle(value: int) -> int:
+    """Normalize a possibly sign-extended handle to an unsigned integer."""
+    return int(value) & 0xFFFFFFFFFFFFFFFF
+
+
+def native_hwnd(widget: Optional[tk.Misc]) -> Optional[int]:
+    """Return the native wrapper HWND behind a Tk widget (Windows only).
+
+    Same pattern as ``MainWindow._hwnd``: ``winfo_id()`` is the Tk window, and
+    its Win32 parent is the toplevel wrapper the window manager sees.
+    """
+    if os.name != "nt" or widget is None:
+        return None
+    try:
+        import ctypes
+
+        widget.update_idletasks()
+        wid = widget.winfo_id()
+        user32 = ctypes.windll.user32
+        user32.GetParent.restype = ctypes.c_void_p
+        user32.GetParent.argtypes = [ctypes.c_void_p]
+        parent = user32.GetParent(ctypes.c_void_p(wid))
+        return int(parent or wid)
+    except Exception:
+        return None
+
+
+def set_window_owner(hwnd: Optional[int], owner_hwnd: Optional[int]) -> bool:
+    """Make ``owner_hwnd`` the OWNER of ``hwnd`` (Windows only).
+
+    Returns ``True`` only when the owner was verified afterwards. Never raises.
+    """
+    if os.name != "nt" or not hwnd or not owner_hwnd or hwnd == owner_hwnd:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        get_long = getattr(user32, "GetWindowLongPtrW", None) or user32.GetWindowLongW
+        set_long = getattr(user32, "SetWindowLongPtrW", None) or user32.SetWindowLongW
+        get_long.restype = ctypes.c_ssize_t
+        get_long.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        set_long.restype = ctypes.c_ssize_t
+        set_long.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+        handle = ctypes.c_void_p(hwnd)
+        if _as_handle(get_long(handle, _GWLP_HWNDPARENT)) == _as_handle(owner_hwnd):
+            return True
+        set_long(handle, _GWLP_HWNDPARENT, ctypes.c_ssize_t(owner_hwnd).value)
+        # Let the frame pick the new relationship up without moving, resizing,
+        # restacking or activating the window.
+        try:
+            user32.SetWindowPos.argtypes = [
+                ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.c_uint,
+            ]
+            user32.SetWindowPos(
+                handle, None, 0, 0, 0, 0,
+                _SWP_FRAMECHANGED | _SWP_NOMOVE | _SWP_NOSIZE
+                | _SWP_NOZORDER | _SWP_NOACTIVATE,
+            )
+        except Exception:
+            pass
+        return _as_handle(get_long(handle, _GWLP_HWNDPARENT)) == _as_handle(owner_hwnd)
+    except Exception:
+        return False
+
+
+def activate_window(hwnd: Optional[int]) -> bool:
+    """Make ``hwnd`` the ACTIVE/foreground window (Windows only).
+
+    Ownership and ``lift()`` fix the stacking, but Tk maps an
+    override-redirect toplevel WITHOUT activating it: the dialog is visible and
+    on top while the main window keeps the keyboard, so every keystroke the
+    user types into the (grabbed) app goes nowhere. Never raises.
+    """
+    if os.name != "nt" or not hwnd:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        user32.BringWindowToTop.argtypes = [ctypes.c_void_p]
+        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        user32.SetActiveWindow.argtypes = [ctypes.c_void_p]
+        user32.SetActiveWindow.restype = ctypes.c_void_p
+        handle = ctypes.c_void_p(hwnd)
+        user32.BringWindowToTop(handle)
+        if user32.SetForegroundWindow(handle):
+            return True
+        # Foreground lock (another process owns the foreground): activating
+        # within our own thread is still enough for the app's own input.
+        user32.SetActiveWindow(handle)
+        return False
+    except Exception:
+        return False
+
+
+def work_area(widget: Optional[tk.Misc] = None) -> Tuple[int, int, int, int]:
+    """Return the usable screen rect ``(x, y, w, h)``, excluding the taskbar.
+
+    When ``widget`` is given, the work area of the monitor that holds it is
+    used, so a window on a secondary display is not clamped back onto the
+    primary one. Falls back to ``SPI_GETWORKAREA`` (primary monitor) and then
+    to the raw screen size. Never raises.
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            hwnd = native_hwnd(widget) if widget is not None else None
+            if hwnd:
+                class _MONITORINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cbSize", wintypes.DWORD),
+                        ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT),
+                        ("dwFlags", wintypes.DWORD),
+                    ]
+
+                user32.MonitorFromWindow.restype = ctypes.c_void_p
+                user32.MonitorFromWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+                monitor = user32.MonitorFromWindow(
+                    ctypes.c_void_p(hwnd), _MONITOR_DEFAULTTONEAREST
+                )
+                if monitor:
+                    info = _MONITORINFO()
+                    info.cbSize = ctypes.sizeof(_MONITORINFO)
+                    user32.GetMonitorInfoW.argtypes = [
+                        ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)
+                    ]
+                    if user32.GetMonitorInfoW(ctypes.c_void_p(monitor), ctypes.byref(info)):
+                        r = info.rcWork
+                        return (r.left, r.top, r.right - r.left, r.bottom - r.top)
+            rect = wintypes.RECT()
+            if user32.SystemParametersInfoW(_SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+                return (
+                    rect.left, rect.top,
+                    rect.right - rect.left, rect.bottom - rect.top,
+                )
+        except Exception:
+            pass
+    try:
+        if widget is not None:
+            return (0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight())
+    except Exception:
+        pass
+    return (0, 0, 1024, 768)
+
+
 class Dialog(tk.Toplevel):
     """A themed, rounded, modal dialog centered over its parent.
 
@@ -44,49 +219,89 @@ class Dialog(tk.Toplevel):
         height: int = 280,
         **kw,
     ) -> None:
-        super().__init__(parent.winfo_toplevel() if isinstance(parent, tk.Misc) else None)
+        owner = parent.winfo_toplevel() if isinstance(parent, tk.Misc) else None
+        super().__init__(owner)
+        # Kept so _reassert_stacking() can restore the OWNER relationship that
+        # overrideredirect(True) destroys (see that method).
+        self._owner = owner
         self.title(title)
         self._width = width
         self._height = height
         self._title = title
         self._tokens: Optional[Dict[str, str]] = None
-        self.transient(parent.winfo_toplevel() if isinstance(parent, tk.Misc) else self)
-        self.grab_set()
-        self.resizable(True, True)
-        # Replace the OS chrome with a custom title bar (below). The 1px floor
-        # lets ``fit()`` size the window to its actual content with no empty gap.
-        self.overrideredirect(True)
-        self.minsize(self._width, 1)
+        # The child widget that should own the keyboard (see _on_focus_in).
+        self._focus_target: Optional[tk.Misc] = None
+        # WINDOWS: transient() is deliberately NOT used together with
+        # overrideredirect(True). Measured on this Tk build: the wrapper HWND
+        # of a TRANSIENT + override-redirect toplevel is created as
+        # WS_CHILD (style 0x56000008) with no parent - a child of the DESKTOP.
+        # Such a window can never be activated (SetForegroundWindow fails) nor
+        # hold the keyboard focus (SetFocus -> ERROR_INVALID_PARAMETER), and it
+        # sinks to the bottom of the z-order: exactly the "app is frozen, no
+        # dialog visible, every click swallowed by the grab" bug. Without
+        # transient() the wrapper is a normal WS_POPUP (0x96000008) that can be
+        # owned, raised and activated - the owner link is (re)established in
+        # _reassert_stacking(), which is what transient() was there for.
+        self._transient_fallback = False
+        if os.name != "nt":
+            self.transient(owner if owner is not None else self)
+        # NOTE: grab_set() deliberately happens at the very END of __init__.
+        # A grab held by a half-built window that then fails to appear is a
+        # silent, total application freeze (the console is hidden, so the
+        # traceback is invisible) - see the guarded block below.
         try:
-            from ..icon_helper import set_window_icon
-            set_window_icon(self)
-        except Exception:
-            pass
+            self.resizable(True, True)
+            # Replace the OS chrome with a custom title bar (below). The 1px
+            # floor lets ``fit()`` size the window to its content with no gap.
+            self.overrideredirect(True)
+            self.minsize(self._width, 1)
+            try:
+                from ..icon_helper import set_window_icon
+                set_window_icon(self)
+            except Exception:
+                pass
 
-        # Custom title bar drawn ABOVE the rounded surface.
-        self._build_title_bar()
+            # Custom title bar drawn ABOVE the rounded surface.
+            self._build_title_bar()
 
-        self._surface = RoundedSurface(self, radius=RADIUS["lg"], border=True)
-        self._surface.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=0, pady=0)
-        self.content = self._surface.body
+            self._surface = RoundedSurface(self, radius=RADIUS["lg"], border=True)
+            self._surface.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=0, pady=0)
+            self.content = self._surface.body
 
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+            self.bind("<Escape>", lambda _e: self.destroy())
+            self.bind("<FocusIn>", self._on_focus_in, add="+")
+            self.protocol("WM_DELETE_WINDOW", self.destroy)
 
-        self._center_over(parent)
-        register_themed(self)
-        self._try_apply_initial()
-        # Auto-fit only once content actually exists; subclasses build their
-        # widgets after super().__init__() and should call fit() again at the
-        # end of their own __init__.
-        if hasattr(self, "content") and self.content is not None:
-            self.fit()
-        # Children (labels/frames) are added by subclasses/callers AFTER this
-        # __init__ returns. A timer callback (unlike after_idle) is not drained
-        # by the update_idletasks() inside fit(), so this fires once those
-        # children exist and they get recolored instead of staying white.
-        if self._tokens is not None:
-            self.after(0, self._apply_content_theme)
+            self._center_over(parent)
+            register_themed(self)
+            self._try_apply_initial()
+            # Auto-fit only once content actually exists; subclasses build
+            # their widgets after super().__init__() and should call fit()
+            # again at the end of their own __init__.
+            if hasattr(self, "content") and self.content is not None:
+                self.fit()
+            # Children (labels/frames) are added by subclasses/callers AFTER
+            # this __init__ returns. A timer callback (unlike after_idle) is
+            # not drained by the update_idletasks() inside fit(), so this fires
+            # once those children exist and they get recolored instead of
+            # staying white.
+            if self._tokens is not None:
+                self.after(0, self._apply_content_theme)
+            # Owner + raise BEFORE the modal grab, so the grab can only ever be
+            # held by a window that is built, placed and actually on top.
+            self._reassert_stacking()
+            self.grab_set()
+        except BaseException:
+            # Never leave a modal grab (or a stray window) behind on failure.
+            try:
+                self.grab_release()
+            except Exception:
+                pass
+            try:
+                self.destroy()
+            except Exception:
+                pass
+            raise
 
     # -- public api --------------------------------------------------------
     def fit(self) -> None:
@@ -99,6 +314,9 @@ class Dialog(tk.Toplevel):
         )
         # Belt-and-braces: anything built since the last recolor gets painted.
         self._apply_content_theme()
+        # A resize can re-map the wrapper window; make sure it is still owned
+        # by (and above) the parent afterwards.
+        self._reassert_stacking()
 
     def apply_theme(self, merged: Dict[str, str]) -> None:
         self._tokens = build_tokens(merged)
@@ -117,7 +335,12 @@ class Dialog(tk.Toplevel):
         self._style_title_bar()
 
     def destroy(self) -> None:
-        unregister_themed(self)
+        # Order matters: the grab MUST be released even if the bookkeeping
+        # below misbehaves, or the app is left deaf with no window to click.
+        try:
+            unregister_themed(self)
+        except Exception:
+            pass
         try:
             self.grab_release()
         except Exception:
@@ -164,6 +387,139 @@ class Dialog(tk.Toplevel):
                 pass
 
     # -- internals ---------------------------------------------------------
+    def _reassert_stacking(self) -> None:
+        """Put this dialog back where the user can see it. Never raises.
+
+        ``overrideredirect(True)`` (the custom title bar depends on it) makes
+        Tk destroy and re-create the wrapper HWND as an UNOWNED popup, throwing
+        away any parent relationship, and Tk maps override-redirect toplevels
+        without activating them. The result is a fully built, mapped, grab
+        holding dialog buried deep in the z-order - the app looks frozen.
+
+        Two independent belts:
+
+        * Windows only: set ``GWLP_HWNDPARENT`` so the dialog is a real OWNED
+          window (an owned window is always above its owner and stays there
+          when the parent is clicked), then ACTIVATE it, because an
+          override-redirect toplevel is mapped without activation and the
+          keyboard would stay attached to the main window.
+        * Everywhere: ``lift()``, plus ``focus_force()`` as the fallback when
+          the native activation is unavailable (non-Windows) or failed.
+
+        Focus is handled carefully: ``focus_force()`` on the TOPLEVEL would
+        cancel the pending ``entry.focus_set()`` that subclasses issue while
+        their widgets are still unmapped (Tk defers such a request until the
+        widget is mapped), leaving a dialog that is visible and active but
+        swallows every keystroke. So the known focus child is forced instead,
+        and when none is known yet nothing is forced as long as the window was
+        natively activated.
+        """
+        try:
+            try:
+                self.update_idletasks()
+            except tk.TclError:
+                return
+            activated = False
+            if os.name == "nt":
+                try:
+                    if not self._reassert_owner():
+                        self._transient_last_resort()
+                    activated = activate_window(native_hwnd(self))
+                except Exception:
+                    activated = False
+            try:
+                self.lift()
+            except tk.TclError:
+                pass
+            keep = self._focus_child() or self._focus_target
+            if keep is not None:
+                self._focus_target = keep
+                try:
+                    keep.focus_force()
+                except tk.TclError:
+                    pass
+            elif not activated:
+                # No child owns the focus yet and the OS would not activate us:
+                # forcing the toplevel is better than a dead dialog.
+                try:
+                    self.focus_force()
+                except tk.TclError:
+                    pass
+        except Exception:
+            pass
+
+    def _focus_child(self) -> Optional[tk.Misc]:
+        """The widget INSIDE this dialog that should keep the keyboard focus."""
+        try:
+            # str(): Tk returns a Tcl_Obj here, which nametowidget() rejects.
+            name = str(self.tk.call("focus", "-lastfor", self._w) or "")
+            if not name:
+                return None
+            widget = self.nametowidget(name)
+        except Exception:
+            return None
+        if widget is self or not isinstance(widget, tk.Misc):
+            return None
+        try:
+            return widget if widget.winfo_toplevel() is self else None
+        except Exception:
+            return None
+
+    def _on_focus_in(self, event: tk.Event) -> None:
+        """Keep the keyboard on the dialog's own input widget.
+
+        Activating the window makes Tk hand the focus to the TOPLEVEL when it
+        processes the (asynchronous) WM_ACTIVATE, which silently takes it off
+        the password entry - the dialog then looks focused but swallows every
+        keystroke. Whenever the toplevel itself is focused, the focus is handed
+        straight back to the child that last had it.
+        """
+        try:
+            widget = event.widget
+            if widget is self:
+                target = self._focus_target
+                if target is None or target is self:
+                    return
+                try:
+                    if target.winfo_exists():
+                        target.focus_set()
+                except tk.TclError:
+                    self._focus_target = None
+            elif isinstance(widget, tk.Misc):
+                self._focus_target = widget
+        except Exception:
+            pass
+
+    def _reassert_owner(self) -> bool:
+        """Re-establish the native OWNER link to the parent toplevel."""
+        owner = getattr(self, "_owner", None)
+        if owner is None:
+            return False
+        try:
+            if not owner.winfo_exists():
+                return False
+        except Exception:
+            return False
+        return set_window_owner(native_hwnd(self), native_hwnd(owner))
+
+    def _transient_last_resort(self) -> None:
+        """If the native owner could not be set, fall back to Tk's transient.
+
+        That yields the old WS_CHILD wrapper (not activatable), but a child
+        window still cannot be covered by its parent, so the dialog remains
+        visible instead of vanishing behind the app. Applied at most once.
+        """
+        if self._transient_fallback:
+            return
+        self._transient_fallback = True
+        owner = getattr(self, "_owner", None)
+        if owner is None:
+            return
+        try:
+            self.transient(owner)
+        except tk.TclError:
+            pass
+
     def _try_apply_initial(self) -> None:
         try:
             if tk._default_root is not None:
@@ -172,17 +528,56 @@ class Dialog(tk.Toplevel):
             pass
 
     def _center_over(self, parent: tk.Misc) -> None:
+        """Center over ``parent``, always inside the visible work area.
+
+        A minimized parent reports ``rootx/rooty == -32000`` (Windows parks
+        minimized windows there). Centering on that put the dialog at
+        ``+-31600+-31680``: mapped, viewable and holding a modal grab, but
+        permanently off-screen - the same "frozen app" symptom by a second
+        route. So the parent's geometry is sanity-checked first, and the final
+        position is clamped into the monitor's work area either way.
+        """
         self.update_idletasks()
-        try:
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-        except Exception:
-            pw, ph, px, py = 800, 600, 100, 100
-        x = px + max(0, (pw - self._width) // 2)
-        y = py + max(0, (ph - self._height) // 2)
+        origin = self._parent_origin(parent)
+        if origin is not None:
+            px, py, pw, ph = origin
+            area = work_area(parent if isinstance(parent, tk.Misc) else None)
+            x = px + max(0, (pw - self._width) // 2)
+            y = py + max(0, (ph - self._height) // 2)
+        else:
+            # No usable parent geometry (minimized / not yet mapped): center on
+            # the primary monitor instead of following it off-screen.
+            area = work_area(None)
+            ax, ay, aw, ah = area
+            x = ax + max(0, (aw - self._width) // 2)
+            y = ay + max(0, (ah - self._height) // 2)
+        x, y = self._clamp_to_area(x, y, area)
         self.geometry(f"{self._width}x{self._height}+{x}+{y}")
+
+    @staticmethod
+    def _parent_origin(parent: tk.Misc):
+        """``(x, y, w, h)`` of ``parent`` if it is really on-screen, else None."""
+        for widget in (parent, getattr(parent, "winfo_toplevel", lambda: None)()):
+            if not isinstance(widget, tk.Misc):
+                continue
+            try:
+                pw = widget.winfo_width()
+                ph = widget.winfo_height()
+                px = widget.winfo_rootx()
+                py = widget.winfo_rooty()
+            except Exception:
+                continue
+            # Minimized (-32000) or never-mapped (1x1) parents are unusable.
+            if pw <= 1 or ph <= 1 or px < -10000 or py < -10000:
+                continue
+            return (px, py, pw, ph)
+        return None
+
+    def _clamp_to_area(self, x: int, y: int, area) -> tuple:
+        ax, ay, aw, ah = area
+        x = min(max(x, ax), max(ax, ax + aw - self._width))
+        y = min(max(y, ay), max(ay, ay + ah - self._height))
+        return (int(x), int(y))
 
     # -- custom title bar --------------------------------------------------
     def _build_title_bar(self) -> None:
@@ -346,8 +741,15 @@ class ThemedPasswordDialog(Dialog):
 
     def show(self) -> Optional[str]:
         """Run modally and return the entered password, or ``None`` if cancelled."""
-        self.grab_set()
-        self.focus_set()
+        # Re-raise first: a dialog that is re-shown (or that was built while
+        # something else grabbed the foreground) must not wait behind the app.
+        # _reassert_stacking() also (re)places the keyboard focus - calling
+        # focus_set() on the toplevel here would take it off the entry.
+        self._reassert_stacking()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
         return self.result
 
@@ -496,8 +898,11 @@ class PasswordGeneratorDialog(Dialog):
 
     def show(self) -> Optional[str]:
         """Run modally and return the generated password, or ``None`` if cancelled."""
-        self.grab_set()
-        self.focus_set()
+        self._reassert_stacking()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.wait_window(self)
         return self.result
 

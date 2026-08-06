@@ -61,25 +61,42 @@ def _main_window(widget: Any) -> Optional[tk.Misc]:
 def dialog_on_top(widget: Any):
     """Float the app (and the native dialog it owns) above every other window.
 
-    Yields the main window (or ``None`` when it could not be resolved). The
-    previous ``-topmost`` state is always restored, even if the body raises.
+    Yields the main window (or ``None`` when it could not be resolved).
+
+    The restore tracks the ACTION, not the previous value: if anything after
+    the ``-topmost`` hint raised, a "previous value" flag could be clobbered
+    and the restore skipped, leaving the MAIN WINDOW PERMANENTLY TOPMOST -
+    which is precisely the state that hides the app's own modal dialogs behind
+    it. ``changed`` is only ever set right after a successful attribute set, so
+    the window can never be left floating.
     """
     root = _main_window(widget)
-    previous: Optional[bool] = None
+    changed = False
     if root is not None:
+        already_topmost = False
         try:
-            previous = bool(root.attributes("-topmost"))
-            if not previous:
+            already_topmost = bool(root.attributes("-topmost"))
+        except Exception:
+            # Platform/WM refused to report it: the dialog is still owned by
+            # the main window, which is the part that guarantees the stacking.
+            already_topmost = True  # do not touch what we cannot read back
+        if not already_topmost:
+            try:
                 root.attributes("-topmost", True)
+            except Exception:
+                pass
+            else:
+                changed = True
+        # Outside the try above on purpose: a failure here must not decide
+        # whether the restore runs.
+        try:
             root.update_idletasks()
         except Exception:
-            # Platform/WM refused the hint: the dialog is still owned by the
-            # main window, which is the part that guarantees the stacking.
-            previous = None
+            pass
     try:
         yield root
     finally:
-        if root is not None and previous is not None and not previous:
+        if changed:
             try:
                 root.attributes("-topmost", False)
             except Exception:

@@ -103,6 +103,9 @@ from .widgets import (
     ThemedPasswordDialog,
     open_theme_settings,
 )
+# Shared Win32/window helpers (defined next to the dialogs that need them, so
+# the owner/work-area logic exists exactly once).
+from .widgets.dialogs import native_hwnd, work_area
 
 try:  # ships with the access-log feature; keep the app usable if it is absent
     from .access_log_window import AccessLogDialog
@@ -423,31 +426,31 @@ class MainWindow:
     # -------------------------------------------------------- window chrome
     def _hwnd(self) -> Optional[int]:
         """Return the native Win32 window handle of the root (or ``None``)."""
-        if os.name != "nt":
-            return None
-        try:
-            import ctypes
+        return native_hwnd(self.root)
 
-            self.root.update_idletasks()
-            wid = self.root.winfo_id()
-            parent = ctypes.windll.user32.GetParent(wid)
-            return int(parent or wid)
-        except Exception:
-            return None
+    def _apply_appwindow_style(self) -> bool:
+        """Patch WS_EX_APPWINDOW (drop WS_EX_TOOLWINDOW) onto the CURRENT wrapper.
 
-    def _enable_taskbar_button(self) -> None:
-        """Give the borderless window a normal taskbar button (Windows)."""
+        Every ``overrideredirect()`` toggle destroys and re-creates the wrapper
+        HWND, so this style has to be re-applied afterwards or the window
+        silently loses its taskbar button. Uses ``SWP_FRAMECHANGED`` instead of
+        a withdraw/deiconify pair so it is safe to call at any time (a
+        withdraw/deiconify here would flash the window and race the map event
+        that triggers it).
+        """
         if not self._borderless or os.name != "nt":
-            return
+            return False
         hwnd = self._hwnd()
         if not hwnd:
-            return
+            return False
         try:
             import ctypes
 
             GWL_EXSTYLE = -20
             WS_EX_APPWINDOW = 0x00040000
             WS_EX_TOOLWINDOW = 0x00000080
+            SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER = 0x0001, 0x0002, 0x0004
+            SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x0010, 0x0020
             user32 = ctypes.windll.user32
             get_long = getattr(user32, "GetWindowLongPtrW", None) or user32.GetWindowLongW
             set_long = getattr(user32, "SetWindowLongPtrW", None) or user32.SetWindowLongW
@@ -457,9 +460,29 @@ class MainWindow:
             set_long.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
             handle = ctypes.c_void_p(hwnd)
             style = get_long(handle, GWL_EXSTYLE)
-            style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-            set_long(handle, GWL_EXSTYLE, style)
-            # The style change only takes effect after the window is re-shown.
+            patched = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            if patched != style:
+                set_long(handle, GWL_EXSTYLE, patched)
+            user32.SetWindowPos.argtypes = [
+                ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.c_uint,
+            ]
+            user32.SetWindowPos(
+                handle, None, 0, 0, 0, 0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+            return True
+        except Exception:
+            return False
+
+    def _enable_taskbar_button(self) -> None:
+        """Give the borderless window a normal taskbar button (Windows)."""
+        if not self._apply_appwindow_style():
+            return
+        try:
+            # At STARTUP the shell only registers the taskbar button when the
+            # window is (re)shown, so this one hide/show pair stays here.
             self.root.withdraw()
             self.root.after(10, self.root.deiconify)
         except Exception:
@@ -481,6 +504,9 @@ class MainWindow:
                 # iconify() is refused for override-redirect windows; drop the
                 # flag for the duration of the minimize and restore it on map.
                 self.root.overrideredirect(False)
+                # The toggle re-created the wrapper HWND: re-apply the style so
+                # the taskbar button is not lost on the way down.
+                self._apply_appwindow_style()
                 self._restore_override_on_map = True
             self.root.iconify()
         except Exception:
@@ -497,6 +523,10 @@ class MainWindow:
             self.root.overrideredirect(True)
         except Exception:
             pass
+        # overrideredirect() just re-created the wrapper HWND as a tool window,
+        # discarding the APPWINDOW patch; put it back or the taskbar button is
+        # gone until restart.
+        self._apply_appwindow_style()
 
     def _style_window_button(self, btn: tk.Button, danger: bool, tokens=None) -> None:
         """Paint a window control and (re)bind its hover state."""
@@ -593,23 +623,12 @@ class MainWindow:
         self._toggle_maximize()
 
     def _work_area(self):
-        """Return the usable screen rect (x, y, w, h), excluding the taskbar."""
-        width = self.root.winfo_screenwidth()
-        height = self.root.winfo_screenheight()
-        if os.name == "nt":
-            try:
-                import ctypes
-                from ctypes import wintypes
+        """Return the usable screen rect (x, y, w, h), excluding the taskbar.
 
-                rect = wintypes.RECT()
-                if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
-                    return (
-                        rect.left, rect.top,
-                        rect.right - rect.left, rect.bottom - rect.top,
-                    )
-            except Exception:
-                pass
-        return (0, 0, width, height)
+        Delegates to the shared helper (also used to keep dialogs on-screen),
+        which resolves the monitor the window is actually on.
+        """
+        return work_area(self.root)
 
     def _toggle_maximize(self) -> None:
         if self._maximized:
@@ -1209,8 +1228,11 @@ class MainWindow:
         if self._fitting:
             return
         self._fitting = True
-        canvas = self.content_canvas
         try:
+            # Inside the try: if this attribute lookup ever fails (the canvas
+            # is torn down on lock), the flag must still be cleared or every
+            # later re-fit silently no-ops for the rest of the session.
+            canvas = self.content_canvas
             canvas_h = canvas.winfo_height()
             inner_h = self.content_inner.winfo_reqheight()
             height = max(canvas_h, inner_h)
@@ -1437,13 +1459,35 @@ class MainWindow:
 
         ``show_generate`` is ``False`` when unlocking an EXISTING vault (no
         generator needed) and ``True`` when creating a NEW vault.
+
+        Returns the entered password, or ``None`` when the user cancelled
+        (callers treat any falsy value as "cancelled").
         """
         dlg = ThemedPasswordDialog(
             self.root, title=title, prompt=prompt, confirm=confirm,
             show_generate=show_generate,
         )
-        self.root.wait_window(dlg)
-        return dlg.result
+        try:
+            # show() is the class's own modal contract: it re-raises the
+            # window, re-takes the grab, then wait_window()s and returns
+            # ``result`` (None on cancel).
+            return dlg.show()
+        finally:
+            # A dialog that died half-way must never keep the modal grab: that
+            # is a total, silent freeze (the app hides its console).
+            try:
+                alive = bool(dlg.winfo_exists())
+            except Exception:
+                alive = False
+            if alive:
+                try:
+                    dlg.grab_release()
+                except Exception:
+                    pass
+                try:
+                    dlg.destroy()
+                except Exception:
+                    pass
 
     def _new_vault(self):
         """Create a new vault."""
@@ -1460,10 +1504,17 @@ class MainWindow:
             return
         if os.path.exists(vault_path) and not messagebox.askyesno("Confirm", "File exists. Overwrite?"):
             return
-        password = self._prompt_password(
-            "Create New Vault", "Enter master password for new vault:",
-            confirm=True, show_generate=True,
-        )
+        # Same guard as _open_vault: the prompt must fail loudly, not silently.
+        try:
+            password = self._prompt_password(
+                "Create New Vault", "Enter master password for new vault:",
+                confirm=True, show_generate=True,
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "Password Prompt Failed", f"Could not show the password prompt:\n{e}"
+            )
+            return
         if not password:
             return
         try:
@@ -1489,9 +1540,17 @@ class MainWindow:
             )
             if not vault_path:
                 return
-        password = self._prompt_password(
-            "Open Vault", "Enter master password:", show_generate=False
-        )
+        # Guarded: an exception from the prompt would otherwise escape into
+        # Tk's callback handler and only reach the (hidden) console.
+        try:
+            password = self._prompt_password(
+                "Open Vault", "Enter master password:", show_generate=False
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "Password Prompt Failed", f"Could not show the password prompt:\n{e}"
+            )
+            return
         if not password:
             try:
                 access_log.record("unlock_cancelled", vault_path=self.vault_path, source="gui")
