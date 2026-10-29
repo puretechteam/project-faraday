@@ -1,8 +1,10 @@
-# Changelog - Faraday 3.0.0
+# Changelog
 
 All entries are newest-first. Project Faraday is developed and maintained by Pure Tech (MIT licensed).
 
-## Unreleased
+## Version 3.0.0 - October 29, 2026
+
+The first public 3.0 release: a new desktop app on a hardened vault core. It replaces the July 2026 Tkinter redesign described further down, which was never published.
 
 ### New desktop app (PySide6)
 - `faraday gui` now opens a new Qt desktop app. The old Tkinter GUI has been removed.
@@ -39,7 +41,7 @@ All entries are newest-first. Project Faraday is developed and maintained by Pur
 - The file format is unchanged (version 1). Vaults stay fully compatible with 3.0 in both directions.
 - New automated test suite (`python -m pytest`), including compatibility checks against a vault written by 3.0.
 
-## Version 3.0.0 - July 11, 2026
+## 3.0 development: Tkinter redesign - July 11, 2026 (superseded, not released)
 
 This release is a **presentation-only GUI redesign**. There are no changes to
 vault cryptography, the data model, the password generator, or the CLI. The
@@ -122,7 +124,7 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
   the themed-widget registry keeps custom/canvas surfaces live-updating on
   preset and override changes.
 
-### Post-release UI fixes
+### Follow-up UI fixes
 A presentation-only fix pass applied after the 3.0.0 release. **No version
 change** (product remains 3.0.0) and **no cryptography or behavior changes**:
 `VaultManager`, models, generator, and CLI are untouched.

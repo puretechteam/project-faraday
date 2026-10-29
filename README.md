@@ -84,7 +84,6 @@ Pure Tech is a software company focused on privacy-respecting, security-first to
 - [Development](#development)
 - [License](#license)
 - [Contributing](#contributing)
-- [Version](#version)
 - [Disclaimer](#disclaimer)
 - [Additional Documentation](#additional-documentation)
 - [Support](#support)
@@ -417,7 +416,7 @@ faraday add-crypto "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh" --note "Bitcoin 
 
 ## Vault Format
 
-Vault files are encrypted and stored locally. The format is versioned; see [vault_format.md](vault_format.md) for technical details. New versions will not silently modify existing vaults.
+Vault files are encrypted and stored locally. The format is versioned; see the [vault file format](docs/vault-format.md) for technical details. New versions will not silently modify existing vaults.
 
 **Important**: Always back up your vault file. Loss of the vault file results in total loss of the stored data. Because the file is encrypted, it is safe to back up to external storage.
 
@@ -533,7 +532,7 @@ For manual runs against a throwaway vault, point `FARADAY_VAULTS_DIR` and `FARAD
 
 Copyright © 2026 Pure Tech
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for the full text.
+This project is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt) for the full text.
 
 ## Contributing
 
@@ -541,7 +540,7 @@ Contributions are welcome. This project adheres to strict security and design pr
 
 - **Offline-First**: No network features, telemetry, or external dependencies
 - **Security-First Design**: Cryptographic correctness takes precedence over convenience
-- **Development Guidelines**: See `docs/` for project documentation
+- **Documentation**: See the [docs folder](docs/README.md)
 - **Comprehensive Testing**: All changes, especially security-related, must be thoroughly tested
 
 ## Disclaimer
@@ -550,8 +549,11 @@ This software is provided "as-is" without warranty of any kind. Users are respon
 
 ## Additional Documentation
 
-- [SECURITY.md](SECURITY.md) - Detailed security information and threat model
-- [vault_format.md](vault_format.md) - Technical vault file format specification
+- [SECURITY.md](SECURITY.md): security model, threat model and data safety
+- [CHANGELOG.md](CHANGELOG.md): release history
+- [Vault file format](docs/vault-format.md): technical specification of vaults and `.faraday` archives
+- [Credits](docs/credits.md): third-party icons and wordlist
+- [All documentation](docs/README.md)
 
 ## Support
 

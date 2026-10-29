@@ -3,7 +3,7 @@ Encrypted Faraday archives (``.faraday``): a single file holding every entry
 and every document, protected by its own password.
 
 The container is the same version 1 layout as a vault file (Argon2id +
-AES-256-GCM, see vault_format.md). The encrypted payload is::
+AES-256-GCM, see docs/vault-format.md). The encrypted payload is::
 
     {"kind": "faraday-export", "exported": <ISO time>, "entries": [...],
      "attachments": {<file_reference>: <plaintext file bytes>}}

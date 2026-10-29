@@ -1,4 +1,4 @@
-# Icon Attribution
+# Credits
 
 ## Desktop app (PySide6)
 

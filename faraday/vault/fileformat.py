@@ -1,5 +1,5 @@
 """
-Pure helpers for the version 1 vault file layout (see vault_format.md):
+Pure helpers for the version 1 vault file layout (see docs/vault-format.md):
 
     [4-byte big-endian header length][CBOR header][12-byte nonce][AES-GCM ciphertext]
 """
