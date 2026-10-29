@@ -119,12 +119,6 @@ logs/
 *.tmp
 *.swn
 
-# ---- Editor / AI tooling ----
-.cursor/
-.claude/
-.kilo/
-.aider*
-
 # OS
 .DS_Store
 Thumbs.db
