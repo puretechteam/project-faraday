@@ -19,7 +19,11 @@ setup(
     long_description=long_description if long_description else "An offline-first password vault",
     long_description_content_type="text/markdown" if long_description else None,
     url="https://github.com/puretechteam/project-faraday",
-    packages=find_packages(),
+    packages=find_packages(exclude=("tests", "tests.*")),
+    package_data={
+        "faraday.qt": ["resources/icons/lucide/*.svg", "resources/icons/lucide/LICENSE-lucide.txt"],
+        "faraday.generator": ["eff_large_wordlist.txt", "WORDLIST_ATTRIBUTION.md"],
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: End Users/Desktop",
@@ -27,9 +31,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
@@ -38,17 +39,19 @@ setup(
         "Topic :: Security :: Cryptography",
         "Topic :: Utilities",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     install_requires=[
         "argon2-cffi>=23,<25",
         "cryptography>=41,<43",
         "cbor2>=5.4,<6.0",
-        "pystray>=0.19,<1.0",
-        "Pillow>=10.0,<11.0",
+        "PySide6>=6.8,<7",
     ],
     entry_points={
         "console_scripts": [
             "faraday=faraday.__main__:main",
+        ],
+        "gui_scripts": [
+            "faraday-gui=faraday.qt.app:main",
         ],
     },
 )

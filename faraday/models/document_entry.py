@@ -4,7 +4,7 @@ Document storage entry model.
 
 from datetime import datetime
 from typing import Optional
-from .entry import BaseEntry
+from .entry import BaseEntry, _utc_now
 
 
 class DocumentEntry(BaseEntry):
@@ -21,7 +21,7 @@ class DocumentEntry(BaseEntry):
         self.file_size = file_size
         self.file_hash = file_hash  # SHA-256 hash
         self.category = category or "General"
-        self.upload_timestamp = upload_timestamp or datetime.utcnow()
+        self.upload_timestamp = upload_timestamp or _utc_now()
     
     def to_dict(self) -> dict:
         """Convert entry to dictionary for serialization."""

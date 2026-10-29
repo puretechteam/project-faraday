@@ -49,6 +49,10 @@ dist/
 *.vault
 *.vault.tmp
 *.vault.attachments/
+*.vault.backups/
+*.vault.lock
+*.faraday
+*.vault.*.tmp
 faraday.vault
 .faraday_vault_history.json
 vaults/
@@ -91,6 +95,8 @@ service-account*.json
 access_log.json
 action_guard.json
 gui_theme.json
+settings.json
+recent_vaults.json
 *.vault.bak
 *.vault.backup
 *_backup_*.vault
@@ -129,3 +135,8 @@ $RECYCLE.BIN/
 .Trashes
 ._*
 
+# ---- Test fixtures: throwaway vaults with a published test password ----
+!tests/fixtures/*.vault
+
+# ---- Marketing drafts (kept local) ----
+promo/

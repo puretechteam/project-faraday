@@ -3,9 +3,14 @@ Base entry model for vault entries.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from abc import ABC, abstractmethod
+
+
+def _utc_now() -> datetime:
+    """Naive UTC timestamp, the same on-disk format the deprecated datetime.utcnow() produced."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class BaseEntry(ABC):
@@ -17,12 +22,12 @@ class BaseEntry(ABC):
         """Initialize base entry."""
         self.entry_id = entry_id or str(uuid.uuid4())
         self.site_note = site_note or ""
-        self.created = created or datetime.utcnow()
-        self.modified = modified or datetime.utcnow()
+        self.created = created or _utc_now()
+        self.modified = modified or _utc_now()
     
     def update_modified(self):
         """Update the modified timestamp."""
-        self.modified = datetime.utcnow()
+        self.modified = _utc_now()
     
     @abstractmethod
     def to_dict(self) -> dict:

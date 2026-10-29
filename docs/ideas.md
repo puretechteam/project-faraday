@@ -1,3 +1,9 @@
-- Generate password outside of vault
-- Copied entries do not clear after 30 seconds, should also be able to copy any parameter of an entry
-- View all entries, instead of just copying
+# Ideas
+
+Done:
+- Generate a password outside of the vault (Generator page, also on the lock screen)
+- Copied entries clear after a delay, and any field of an entry can be copied
+- View all entries, not just copy them (detail pane and All items)
+- Live two-factor codes
+- Import from other password managers and encrypted export
+- Windows app build and per-user installer

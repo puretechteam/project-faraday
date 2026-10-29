@@ -74,7 +74,9 @@ The encrypted payload (after decryption) is CBOR-encoded and contains:
     "entry_id": str,
     "username": str,          # Username/login identifier
     "password": str,          # Password
-    "site_note": str,
+    "url": str,               # Optional; only written when set
+    "notes": str,             # Optional; only written when set
+    "site_note": str,         # Site or service name
     "created": str,
     "modified": str
 }
@@ -138,7 +140,7 @@ The encrypted payload (after decryption) is CBOR-encoded and contains:
     "entry_id": str,
     "service_name": str,
     "backup_codes": [str],    # List of backup/recovery codes
-    "totp_secret": str,       # Optional TOTP secret (encrypted)
+    "totp_secret": str,       # Optional: base32 secret or otpauth://totp/ URI (RFC 6238)
     "site_note": str,
     "created": str,
     "modified": str
@@ -247,6 +249,35 @@ This design allows:
 - Individual file encryption (key isolation)
 - Backup-friendly structure (attachments directory can be backed up separately)
 
+## Files Next to a Vault
+
+| Path | Contents |
+|---|---|
+| `<vault>.attachments/<uuid>.enc` | Encrypted document files (see above) |
+| `<vault>.backups/<name>.<UTC time>.vault` | Automatic snapshots: earlier copies of the vault file, same format and encryption |
+| `<vault>.lock` | Lock file held while a Faraday process has the vault open for writing |
+
+Saves are atomic: a uniquely named temporary file next to the vault is written, flushed to disk and then renamed over the vault.
+
+## Unknown Fields and Entry Types
+
+Readers must preserve what they do not understand. Fields a reader does not know are kept and written back unchanged, and entries with an unknown `type` (or unreadable fields) are kept as opaque entries and saved back byte-for-byte. This lets older and newer versions share a vault without losing data.
+
+## Faraday Archive (`.faraday`)
+
+An encrypted export of a whole vault uses the same container as a vault file (header, nonce, AES-256-GCM ciphertext, Argon2id key from the archive password). The decrypted payload is:
+
+```python
+{
+    "kind": "faraday-export",
+    "exported": str,                      # ISO 8601 UTC timestamp
+    "entries": [dict, ...],               # Entries exactly as stored in a vault
+    "attachments": {file_reference: bytes}  # Plaintext document files, inside the encryption
+}
+```
+
+On import, every document is re-encrypted under the destination vault's key with a new `file_reference`, and entries whose `entry_id` already exists receive a new one.
+
 ## Version Compatibility
 
 - **Future versions**: Will maintain backward compatibility through explicit migration logic
@@ -254,7 +285,7 @@ This design allows:
 
 ## Encryption Details
 
-- **Algorithm**: AES-256-GCM (default) or XChaCha20-Poly1305
+- **Algorithm**: AES-256-GCM
 - **Key Derivation**: Argon2id with parameters from header
 - **Nonce**: Unique random nonce per encryption (never reused)
 - **Authentication**: GCM/Poly1305 authentication tag included in ciphertext

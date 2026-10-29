@@ -18,7 +18,7 @@ echo [Checking Python Installation...]
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [X] Python not found in PATH
-    echo     Please install Python 3.7 or later
+    echo     Please install Python 3.10 or later
     echo.
 ) else (
     for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
@@ -42,7 +42,7 @@ REM Check required packages
 echo [Checking Required Packages...]
 echo.
 
-set PACKAGES=argon2-cffi cryptography cbor2 pystray Pillow
+set PACKAGES=argon2-cffi cryptography cbor2 PySide6
 
 for %%p in (%PACKAGES%) do (
     python -c "import %%p" >nul 2>&1

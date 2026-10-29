@@ -9,19 +9,18 @@ import os
 import glob
 from typing import Optional, List
 
-from .vault.manager import VaultManager
+from .vault.manager import VaultManager, ENTRY_TYPE_REGISTRY
+from .vault.backups import BackupStore
 from .vault.security import secure_delete_file
-from .vault.crypto import VAULT_FORMAT_VERSION
 from .models.crypto_entry import CryptoEntry
 from .models.credential_entry import CredentialEntry
-from .generator.password import PasswordGenerator
+from .generator.password import PasswordGenerator, PassphraseGenerator
+from .paths import default_vaults_dir
 
 
 def get_vaults_directory() -> str:
     """Get the vaults directory path, creating it if it doesn't exist."""
-    vaults_dir = os.path.join(os.getcwd(), "vaults")
-    os.makedirs(vaults_dir, exist_ok=True)
-    return vaults_dir
+    return str(default_vaults_dir())
 
 
 def get_default_vault_path() -> str:
@@ -60,28 +59,35 @@ def cmd_list_vaults(args):
 
 
 def _get_vault_path(args) -> str:
-    """Get vault path from args or default."""
-    return args.vault_path or get_default_vault_path()
+    """Get vault path from args or default. A bare file name means a vault in the default folder."""
+    if not args.vault_path:
+        return get_default_vault_path()
+    if not os.path.dirname(args.vault_path) and not os.path.exists(args.vault_path):
+        return os.path.join(get_vaults_directory(), args.vault_path)
+    return args.vault_path
 
 
-def _with_vault(args, func):
-    """Execute function with unlocked vault, handling errors."""
+def _with_vault(args, func, read_only=False, password=None):
+    """Execute function with unlocked vault, handling errors. The vault is always locked afterwards."""
     vault_path = _get_vault_path(args)
-    password = get_password()
+    if password is None:
+        password = get_password()
+    manager = None
     try:
-        manager = VaultManager(vault_path, password)
+        manager = VaultManager(vault_path, password, auto_lock_seconds=None, read_only=read_only)
         manager.unlock_vault()
-        result = func(manager, vault_path)
-        manager.lock_vault()
-        return result
+        return func(manager, vault_path)
     except Exception as e:
         print(f"Operation failed: {e}")
         return 1
+    finally:
+        if manager is not None and not manager.is_locked:
+            manager.lock_vault(reason="manual")
 
 
 def cmd_init(args):
     """Initialize a new vault."""
-    vault_path = args.vault_path or get_default_vault_path()
+    vault_path = _get_vault_path(args)
     if os.path.exists(vault_path):
         print(f"Vault file already exists: {vault_path}")
         print("Use a different path or unlock the existing vault.")
@@ -104,9 +110,10 @@ def cmd_unlock(args):
     vault_path = _get_vault_path(args)
     password = get_password()
     try:
-        manager = VaultManager(vault_path, password)
+        manager = VaultManager(vault_path, password, auto_lock_seconds=None, read_only=True)
         if manager.unlock_vault():
-            print(f"Vault unlocked: {os.path.abspath(vault_path)}")
+            manager.lock_vault(reason="manual")
+            print(f"Password verified; vault opens: {os.path.abspath(vault_path)}")
             return 0
         print("Unlock operation failed. Please verify your password and vault file.")
         return 1
@@ -151,7 +158,7 @@ def cmd_list(args):
                     print(f"Username: {entry.username}")
                 print(f"Created: {entry.created}\nModified: {entry.modified}\n" + "-" * 40)
         return 0
-    return _with_vault(args, _list)
+    return _with_vault(args, _list, read_only=True)
 
 
 def cmd_get(args):
@@ -168,19 +175,26 @@ def cmd_get(args):
             print(f"Username: {entry.username}\nPassword: {entry.password}")
         print(f"Created: {entry.created}\nModified: {entry.modified}")
         return 0
-    return _with_vault(args, _get)
+    return _with_vault(args, _get, read_only=True)
 
 
 def cmd_generate(args):
     """Generate password."""
-    generator = PasswordGenerator(
-        length=args.length or 16,
-        use_lowercase=not args.no_lowercase,
-        use_uppercase=not args.no_uppercase,
-        use_digits=not args.no_digits,
-        use_symbols=not args.no_symbols,
-        exclude_chars=args.exclude or ""
-    )
+    try:
+        if args.words:
+            generator = PassphraseGenerator(words=args.words)
+        else:
+            generator = PasswordGenerator(
+                length=args.length or 16,
+                use_lowercase=not args.no_lowercase,
+                use_uppercase=not args.no_uppercase,
+                use_digits=not args.no_digits,
+                use_symbols=not args.no_symbols,
+                exclude_chars=args.exclude or ""
+            )
+    except ValueError as e:
+        print(f"Cannot generate: {e}")
+        return 1
     print(generator.generate())
     return 0
 
@@ -198,6 +212,12 @@ def cmd_delete_vault(args):
         print(f"Vault file not found: {vault_path}")
         return 1
     if args.secure:
+        name = os.path.basename(vault_path)
+        print(f"Secure deletion overwrites '{vault_path}' and cannot be undone.")
+        print("Its attachments and backups folders are left in place.")
+        if input(f"Type the vault file name ({name}) to confirm: ").strip() != name:
+            print("Deletion cancelled by user")
+            return 0
         print(f"Securely deleting vault: {vault_path}")
         if secure_delete_file(vault_path, passes=3):
             print("Vault securely deleted (multiple overwrite passes completed)")
@@ -221,49 +241,60 @@ def cmd_delete_vault(args):
 
 
 def cmd_upgrade_vault(args):
-    """Upgrade vault to use enhanced Argon2 parameters."""
+    """Re-encrypt the vault with a fresh salt and the chosen Argon2 parameters."""
     from .vault.crypto import get_argon2_params
-    from .vault.storage import create_vault_header, serialize_vault_data
-    from .vault.security import set_vault_permissions
-    vault_path = _get_vault_path(args)
-    password = get_password()
-    try:
-        manager = VaultManager(vault_path, password)
-        manager.unlock_vault()
-        entries = manager.list_entries()
-        print(f"Upgrading vault with {len(entries)} entries...")
-        salt = manager.crypto.generate_salt()
-        params = get_argon2_params(args.security_level or "standard")
-        manager.master_key = manager.crypto.derive_master_key(salt, time_cost=params["time_cost"], memory_cost=params["memory_cost"], parallelism=params["parallelism"])
-        plaintext = serialize_vault_data({"entries": [entry.to_dict() for entry in entries]})
-        nonce, ciphertext = manager.crypto.encrypt_aes_gcm(plaintext, manager.master_key)
-        header = create_vault_header(VAULT_FORMAT_VERSION, salt, {"time_cost": params["time_cost"], "memory_cost": params["memory_cost"], "parallelism": params["parallelism"]})
-        header_bytes = serialize_vault_data(header)
-        temp_path = vault_path + ".tmp"
-        try:
-            with open(temp_path, 'wb') as f:
-                f.write(len(header_bytes).to_bytes(4, 'big'))
-                f.write(header_bytes)
-                f.write(nonce)
-                f.write(ciphertext)
-            os.replace(temp_path, vault_path)
-            set_vault_permissions(vault_path)
-            print(f"Vault upgraded successfully with security level: {args.security_level or 'standard'}")
-            manager.lock_vault()
-            return 0
-        except Exception as e:
-            if os.path.exists(temp_path):
-                secure_delete_file(temp_path)
-            raise
-    except Exception as e:
-        print(f"Vault upgrade failed: {e}")
+    level = args.security_level or "standard"
+
+    def _upgrade(manager, vault_path):
+        manager.rekey(kdf_params=get_argon2_params(level))
+        print(f"Vault upgraded successfully with security level: {level}")
+        print(f"The previous version was kept in: {manager.backups.directory}")
+        return 0
+    return _with_vault(args, _upgrade)
+
+
+def cmd_backup(args):
+    """Copy the vault and its attachments into a new, verified folder."""
+    def _backup(manager, vault_path):
+        folder = manager.export_full_backup(args.dest)
+        print(f"Backup written and verified: {folder}")
+        return 0
+    return _with_vault(args, _backup)
+
+
+def cmd_list_backups(args):
+    """List the automatic snapshots kept for a vault."""
+    store = BackupStore(_get_vault_path(args))
+    backups = store.list()
+    if not backups:
+        print(f"No automatic backups found in {store.directory}")
+        return 0
+    for i, b in enumerate(backups, 1):
+        print(f"  {i}. {b.created.astimezone():%Y-%m-%d %H:%M:%S}  {b.size / 1024:.1f} KB  {b.path}")
+    return 0
+
+
+def cmd_restore(args):
+    """Replace the vault with one of its automatic snapshots (the current file is snapshotted first)."""
+    store = BackupStore(_get_vault_path(args))
+    backups = store.list()
+    if not 1 <= args.number <= len(backups):
+        print("No such backup. Run 'faraday list-backups' to see the numbers.")
         return 1
+    chosen = backups[args.number - 1]
+    password = get_password()
+
+    def _restore(manager, vault_path):
+        count = manager.restore_backup(chosen.path, password)
+        print(f"Restored backup from {chosen.created.astimezone():%Y-%m-%d %H:%M:%S} ({count} entries).")
+        return 0
+    return _with_vault(args, _restore, password=password)
 
 
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description="Project Faraday - Offline Password Vault", prog="faraday")
-    parser.add_argument("--vault", dest="vault_path", help="Path to vault file (default: vaults/faraday.vault). You can use multiple vaults by specifying different paths.")
+    parser.add_argument("--vault", dest="vault_path", help="Vault file. A bare name such as work.vault means Documents\\Faraday\\work.vault (default: faraday.vault).")
     parser.add_argument("--vaultlist", action="store_true", help="List all vault files in the current directory")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
     
@@ -282,7 +313,7 @@ def main():
     add_cred_parser.add_argument("--note", help="Site/service note")
     list_parser = subparsers.add_parser("list", help="List entries")
     list_parser.set_defaults(func=cmd_list)
-    list_parser.add_argument("--type", choices=["crypto", "credential"], help="Filter by entry type")
+    list_parser.add_argument("--type", choices=sorted(ENTRY_TYPE_REGISTRY), help="Filter by entry type")
     get_parser = subparsers.add_parser("get", help="Get entry by ID")
     get_parser.set_defaults(func=cmd_get)
     get_parser.add_argument("entry_id", help="Entry ID")
@@ -294,6 +325,7 @@ def main():
     gen_parser.add_argument("--no-digits", action="store_true", help="Exclude digits")
     gen_parser.add_argument("--no-symbols", action="store_true", help="Exclude symbols")
     gen_parser.add_argument("--exclude", help="Characters to exclude")
+    gen_parser.add_argument("--words", type=int, help="Generate a passphrase with this many words instead")
     lock_parser = subparsers.add_parser("lock", help="Lock vault")
     lock_parser.set_defaults(func=cmd_lock)
     delete_parser = subparsers.add_parser("delete-vault", help="Delete vault file")
@@ -302,6 +334,14 @@ def main():
     upgrade_parser = subparsers.add_parser("upgrade-vault", help="Upgrade vault to use enhanced Argon2 parameters")
     upgrade_parser.set_defaults(func=cmd_upgrade_vault)
     upgrade_parser.add_argument("--security-level", choices=["low", "standard", "high", "maximum"], help="Security level for upgrade (default: standard)")
+    backup_parser = subparsers.add_parser("backup", help="Copy the vault and attachments into a new verified folder")
+    backup_parser.set_defaults(func=cmd_backup)
+    backup_parser.add_argument("dest", help="Folder to create the backup in")
+    list_backups_parser = subparsers.add_parser("list-backups", help="List automatic vault snapshots")
+    list_backups_parser.set_defaults(func=cmd_list_backups)
+    restore_parser = subparsers.add_parser("restore", help="Restore an automatic snapshot (see list-backups)")
+    restore_parser.set_defaults(func=cmd_restore)
+    restore_parser.add_argument("number", type=int, help="Backup number from list-backups")
     
     args = parser.parse_args()
     if args.vaultlist:

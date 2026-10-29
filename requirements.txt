@@ -8,7 +8,6 @@ cryptography>=41,<43
 # Serialization
 cbor2>=5.4,<6.0
 
-# System tray (optional)
-pystray>=0.19,<1.0
-Pillow>=10.0,<11.0
+# Desktop GUI
+PySide6>=6.8,<7
 

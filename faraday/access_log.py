@@ -1,7 +1,7 @@
 """Audit trail for Faraday 3.0.0 vault access events.
 
 This module records an audit trail of attempts to open/use the app and unlock
-the vault. It is deliberately free of any tkinter dependency so it can be
+the vault. It is deliberately free of any GUI dependency so it can be
 imported by the CLI and the vault manager as well as the GUI.
 
 Every disk operation is wrapped so it can NEVER raise and NEVER block an
@@ -29,22 +29,8 @@ _write_lock = threading.Lock()
 
 
 def app_data_dir() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA")
-        if not base:
-            base = os.path.expanduser("~\\AppData\\Local")
-        path = Path(base) / "FaradayVault"
-    else:
-        xdg = os.environ.get("XDG_CONFIG_HOME")
-        if xdg:
-            path = Path(xdg) / "FaradayVault"
-        else:
-            path = Path(os.path.expanduser("~/.config")) / "FaradayVault"
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-    return path
+    from .paths import app_data_dir as _app_data_dir
+    return _app_data_dir()
 
 
 def access_log_path() -> Path:
@@ -148,23 +134,27 @@ def describe(ev: dict) -> str:
         return "Vault unlocked"
     if event == "unlock_failed":
         if reason == "bad_password_or_corrupt":
-            return "Failed sign-in — wrong password or damaged vault file"
+            return "Failed sign-in: wrong password or damaged vault file"
         if reason == "vault_missing":
-            return "Failed sign-in — vault file not found"
+            return "Failed sign-in: vault file not found"
         if reason == "vault_damaged":
-            return "Failed sign-in — vault file is corrupted or wrong format"
+            return "Failed sign-in: vault file is damaged or in the wrong format"
         return "Failed sign-in"
     if event == "unlock_cancelled":
         return "Sign-in cancelled"
     if event == "vault_locked":
         if reason == "auto_timeout":
-            return "Vault locked automatically after 5 minutes of inactivity"
+            return "Vault locked automatically after inactivity"
         if reason == "manual":
             return "Vault locked"
         if reason == "switch_vault":
             return "Vault locked to open another"
         if reason == "app_exit":
             return "Vault locked on app exit"
+        if reason == "session_lock":
+            return "Vault locked when Windows was locked"
+        if reason == "restored_backup":
+            return "Vault locked after restoring a backup"
         return "Vault locked"
     if event == "vault_created":
         return "Vault created"

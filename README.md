@@ -2,7 +2,7 @@
 
 ![version](https://img.shields.io/badge/version-3.0.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
-![python](https://img.shields.io/badge/python-3.7%20%7C%203.8–3.13-blue)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![encryption](https://img.shields.io/badge/encryption-AES--256--GCM-orange)
 ![kdf](https://img.shields.io/badge/KDF-Argon2id-informational)
@@ -12,6 +12,21 @@
 Copyright © 2026 Pure Tech
 
 Project Faraday is a secure, offline-first credential and digital-asset vault developed and maintained by Pure Tech. It provides both a command-line interface and a native graphical application for storing passwords, cryptographic keys, and sensitive records with provably strong, locally executed cryptography.
+
+![Faraday overview](docs/screenshots/overview.png)
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Logins with the detail pane](docs/screenshots/logins.png) | ![Live two-factor codes in the Spiral theme](docs/screenshots/two-factor-spiral.png) |
+| **Every item, every field.** Copy any field; secrets stay masked until you reveal them. | **Live two-factor codes** with a countdown, shown here in the Spiral theme. |
+| ![Command palette](docs/screenshots/command-palette.png) | ![Theme gallery](docs/screenshots/themes.png) |
+| **Ctrl+K** jumps to any item or command. | **14 themes**, including all the classics from 3.0. |
+| ![Password generator](docs/screenshots/generator-light.png) | ![Lock screen](docs/screenshots/lock-screen.png) |
+| **Generator** for passwords and passphrases, even while locked. | **Lock screen.** Auto-locks when idle or when Windows locks. |
+
+Screenshots use a demo vault with made-up data (`python scripts/make_screenshots.py` regenerates them).
 
 ## Overview
 
@@ -48,6 +63,7 @@ Pure Tech is a software company focused on privacy-respecting, security-first to
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Why Project Faraday?](#why-project-faraday)
 - [Features](#features)
 - [Security Architecture](#security-architecture)
@@ -55,12 +71,14 @@ Pure Tech is a software company focused on privacy-respecting, security-first to
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Installation Steps](#installation-steps)
+  - [Windows app](#windows-app)
 - [Usage](#usage)
   - [Command Line Interface (CLI)](#command-line-interface-cli)
   - [Graphical User Interface (GUI)](#graphical-user-interface-gui)
 - [Detailed Examples](#detailed-examples)
 - [Vault Format](#vault-format)
 - [File Locations](#file-locations)
+- [Backups](#backups)
 - [Security Best Practices](#security-best-practices)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -81,9 +99,14 @@ Pure Tech is a software company focused on privacy-respecting, security-first to
 - **Threat Model Panel**: In-app educational tab with local Argon2 timing and metadata-only analysis
 - **Advanced Password Generator**: Cryptographically secure generation with customizable character sets and exclusion rules
 - **Dual Interface**: Full-featured CLI for automation and GUI for interactive use
-- **Recent Vaults Management**: GUI maintains history of recently accessed vaults
-- **System Tray Integration**: Optional system tray icon for quick access (configurable)
-- **Automatic Locking**: Configurable auto-lock after inactivity period
+- **Modern Desktop App**: PySide6 (Qt) GUI with light and dark themes, a command palette (Ctrl+K) and keyboard shortcuts
+- **Live Two-Factor Codes**: Authenticator codes for stored TOTP secrets
+- **Import and Encrypted Export**: Bitwarden, KeePass and KeePassXC imports; password-protected `.faraday` archives
+- **Recent Vaults Management**: The GUI remembers recently opened vaults
+- **System Tray Integration**: Tray icon with lock, generator and exit
+- **Automatic Locking**: Locks after a configurable idle time, when Windows locks or sleeps, and optionally on minimize
+- **Automatic Snapshots**: An encrypted copy of the previous version is kept before every save
+- **Crash-Safe Saves**: Atomic writes, file locking between windows and the CLI, and rollback on failure
 - **Enterprise-Grade Cryptography**: Argon2id key derivation with configurable security levels and AES-256-GCM authenticated encryption
 - **Secure File Operations**: Restrictive file permissions and secure deletion capabilities
 
@@ -119,8 +142,8 @@ Project Faraday implements industry-standard cryptographic primitives:
 
 ### Prerequisites
 
-- Windows 10/11 (or Linux/macOS — cross-platform)
-- Python 3.7 or later
+- Windows 10/11 (Linux and macOS also work)
+- Python 3.10 or later
 - pip
 
 ### Installation Steps
@@ -141,6 +164,19 @@ Project Faraday implements industry-standard cryptographic primitives:
    faraday --help
    ```
 
+### Windows app
+
+Build a standalone `Faraday.exe` (no Python needed to run it) and install it for your user:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+powershell -ExecutionPolicy Bypass -File packaging\install.ps1
+```
+
+The app goes to `%LOCALAPPDATA%\Programs\Faraday` with a Start Menu shortcut (add `-DesktopShortcut`
+for one on the desktop). Run `uninstall.ps1` in that folder to remove it. Installing, upgrading and
+uninstalling never touch your vaults or settings.
+
 ### Optional: Check Dependencies
 
 Run `dependencies.bat` (Windows) to check what is installed (informational only).
@@ -157,12 +193,12 @@ Run `dependencies.bat` (Windows) to check what is installed (informational only)
 faraday init
 ```
 
-This creates `vaults/faraday.vault` by default.
+This creates `Documents\Faraday\faraday.vault` by default.
 
 **Create a vault with a custom name:**
 
 ```bash
-faraday --vault vaults/my_vault.vault init
+faraday --vault my_vault.vault init
 ```
 
 Or use a relative path from the vaults directory:
@@ -233,7 +269,7 @@ faraday generate --length 24 --no-symbols --exclude "0O1l"
 faraday --vaultlist
 ```
 
-This shows all `.vault` files in the `vaults/` folder with their paths and sizes, making it easy to see what vaults are available.
+This shows all `.vault` files in `Documents\Faraday` with their paths and sizes, making it easy to see what vaults are available.
 
 #### Multiple Vaults
 
@@ -243,17 +279,17 @@ You can create and use multiple vaults by specifying different paths:
 # List available vaults
 faraday --vaultlist
 
-# Create work vault (in vaults/ folder)
-faraday --vault vaults/work.vault init
+# Create work vault (in Documents\Faraday)
+faraday --vault work.vault init
 
-# Create personal vault (in vaults/ folder)
-faraday --vault vaults/personal.vault init
+# Create personal vault (in Documents\Faraday)
+faraday --vault personal.vault init
 
 # Use work vault
-faraday --vault vaults/work.vault add-credential user pass --note "Work account"
+faraday --vault work.vault add-credential user pass --note "Work account"
 
 # Use personal vault
-faraday --vault vaults/personal.vault list
+faraday --vault personal.vault list
 ```
 
 Each vault is completely independent with its own password and encryption.
@@ -266,48 +302,78 @@ Each vault is completely independent with its own password and encryption.
 faraday gui
 ```
 
+After `pip install -e .` there is also a `faraday-gui` launcher that starts without a console window.
+To install Faraday as a normal Windows app with a Start Menu shortcut, see [Windows app](#windows-app).
+
 #### GUI Features
 
-- **Borderless app shell**: custom-themed window chrome with a collapsible left
-  sidebar, a topbar (search, vault name, lock control, theme quick-control), a
-  centered **Unlock screen** with a recent-vaults list (Open / New Vault), and a
-  status bar showing the active vault
-- **More menu**: a Topbar "More" menu (icon button + themed popup) holds the
-  `File`, `Security`, and `Theme` actions — the old in-window `File`/`Security`/
-  `Theme`/`Help` menu strip was removed in 3.0.0
-- **File actions**: New vault, open vault, backup vault, recent vaults, lock vault, and exit
-- **Security actions**: Optional Action PIN setup/change/disable for protected operations
-- **Theme controls**: Theme settings and quick presets with local save/load behavior
+- **Lock screen**: pick a recent vault (or browse for one), enter the master password, or create a new vault.
+  Key derivation runs in the background, so the window never freezes.
+- **Sidebar**: Overview, All items, the ten entry types with counts, and tools (Generator, Backups,
+  Access log, Threat model), plus Settings and About.
+- **Entries**: a filterable list and a detail pane for every type. Every field has a copy button; secrets
+  stay masked until you reveal them and mask themselves again after a short delay.
+- **Editing**: forms with inline validation. Saving an edit keeps the entry's id and created date.
+- **Documents**: files are encrypted into the vault and can be exported again (integrity-checked).
+- **Command palette (Ctrl+K)**: jump to any item or command. Shift+Enter copies the item's main secret.
+- **Generator**: random passwords (8 to 128 characters) or passphrases (3 to 12 words), also available
+  from the lock screen.
+- **Overview**: counts plus health checks (weak or reused passwords, expiring cards, snapshot age).
+- **Backups**: restore an automatic snapshot, or export a verified full backup including attachments.
+- **Themes**: 13 themes (the 11 classic ones from 3.0 such as Spiral, New Vegas and Paper, plus Faraday dark
+  and light) or Match Windows, picked from a preview gallery in Settings. Any theme can take a custom accent colour.
+- **Settings**: auto-lock, clipboard clear and reveal delays, action PIN, theme and accent colour,
+  text size, tray behaviour, lock when Windows locks, and hiding the window from screen capture.
+- **Two-factor codes**: two-factor items with an authenticator secret (base32 or an `otpauth://` link)
+  show the live 6 to 8 digit code with a countdown, like an authenticator app. Ctrl+Shift+C copies it.
+- **Import and export**: import from Bitwarden (.json, .csv), KeePass 2 (.xml, .csv), KeePassXC (.csv),
+  another Faraday vault or a `.faraday` archive, with a preview and duplicate detection. After importing a
+  plain-text export Faraday offers to securely delete it. Export writes one password-protected `.faraday`
+  archive with every item and document; there is no plain-text export.
+- **Clipboard**: copied secrets are cleared after a delay (only if they are still on the clipboard) and are
+  kept out of Windows clipboard history and cloud clipboard.
 
-- **Sections**: Credentials, secure notes, cards, identities, 2FA, Wi-Fi, documents, API keys, emergency contacts, crypto, and Threat Model
+#### Keyboard shortcuts
 
-- **Features:**
-   - Add, view, and delete entries
-   - Password generator button in credentials section
-   - Status bar shows current vault name
-   - Auto-locks after a configurable inactivity period
-   - System tray icon (optional) for quick access
+| Shortcut | Action |
+|---|---|
+| Ctrl+K | Search items and commands |
+| Ctrl+N | New item of the current type |
+| F2 | Edit the selected item |
+| Delete | Delete the selected item (when the list has focus) |
+| Ctrl+Shift+C | Copy the selected item's main secret |
+| Ctrl+F | Filter the current list |
+| Ctrl+G | Password generator |
+| Ctrl+, | Settings |
+| Ctrl+L | Lock now |
+
+#### Action PIN
+
+An optional PIN guards revealing and copying secrets, editing, deleting and exporting documents.
+After a correct PIN, Faraday trusts the session for a grace period (default 60 seconds).
+After 5 wrong PINs only the master password is accepted until the next unlock. Restoring a backup,
+clearing the access log, changing the PIN or turning auto-lock off always ask for the master password.
 
 ## Detailed Examples
 
 ### Creating and Using Multiple Vaults
 
 ```bash
-# Create a vault for work (in vaults/ folder)
-faraday --vault vaults/work.vault init
+# Create a vault for work (in Documents\Faraday)
+faraday --vault work.vault init
 # Enter password when prompted
 
-# Create a vault for personal use (in vaults/ folder)
-faraday --vault vaults/personal.vault init
+# Create a vault for personal use (in Documents\Faraday)
+faraday --vault personal.vault init
 # Enter different password when prompted
 
 # Add entries to work vault
-faraday --vault vaults/work.vault add-credential workuser workpass --note "Work email"
-faraday --vault vaults/work.vault add-crypto "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb" --note "Work crypto wallet"
+faraday --vault work.vault add-credential workuser workpass --note "Work email"
+faraday --vault work.vault add-crypto "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb" --note "Work crypto wallet"
 
 # Add entries to personal vault
-faraday --vault vaults/personal.vault add-credential personaluser personalpass --note "Personal email"
-faraday --vault vaults/personal.vault list
+faraday --vault personal.vault add-credential personaluser personalpass --note "Personal email"
+faraday --vault personal.vault list
 ```
 
 ### Password Generation
@@ -351,22 +417,35 @@ faraday add-crypto "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh" --note "Bitcoin 
 
 ## Vault Format
 
-Vault files are encrypted and stored locally. The format is versioned — see [vault_format.md](vault_format.md) for technical details. New versions will not silently modify existing vaults.
+Vault files are encrypted and stored locally. The format is versioned; see [vault_format.md](vault_format.md) for technical details. New versions will not silently modify existing vaults.
 
 **Important**: Always back up your vault file. Loss of the vault file results in total loss of the stored data. Because the file is encrypted, it is safe to back up to external storage.
 
 ## File Locations
 
-- **Vault files**: Created in the `vaults/` folder in the project root (or specified path)
-- **Recent vaults history**: stored under the app data directory (e.g. `%LOCALAPPDATA%\FaradayVault\` on Windows)
-- **Default vault**: `vaults/faraday.vault` (if no `--vault` flag is used)
-- **Vaults directory**: Automatically created if it doesn't exist
+- **Vault files**: `Documents\Faraday` (or any path you choose). Set `FARADAY_VAULTS_DIR` to use a
+  different default folder. Keep vaults out of source folders so tools like `git clean` can never touch them.
+- **Automatic snapshots**: `<vault>.backups/` next to each vault
+- **Attachments**: `<vault>.attachments/` next to each vault (encrypted)
+- **Settings, recent vaults, action PIN, access log**: `%LOCALAPPDATA%\FaradayVault\` on Windows
+  (`~/.config/FaradayVault/` elsewhere). Set `FARADAY_APPDATA` to use a different folder.
+- **Default CLI vault**: `Documents\Faraday\faraday.vault` (if no `--vault` flag is used; a bare
+  `--vault name.vault` also means a file in that folder)
+
+## Backups
+
+- Before every save, Faraday keeps the previous encrypted version in `<vault>.backups/`
+  (the 10 newest, plus one per day for 14 days; configurable in Settings).
+  Restore one from the Backups page or with `faraday list-backups` and `faraday restore <number>`.
+- For a complete copy including document attachments, use **Export full backup** on the Backups page,
+  or `faraday backup <folder>`. Every copied file is verified.
+- Keep at least one copy somewhere other than this PC.
 
 ## Security Best Practices
 
 1. **Use strong master passwords**: Your vault is only as secure as your master password
 2. **Back up your vault file**: Store encrypted vault files in multiple safe locations
-3. **Lock when not in use**: The GUI auto-locks after a configurable inactivity period, but you can lock manually
+3. **Lock when not in use**: The GUI auto-locks after a configurable idle time and when Windows locks; Ctrl+L locks immediately
 4. **Use different vaults**: Separate work and personal data into different vaults
 5. **Keep your system secure**: Project Faraday cannot protect against compromised systems
 6. **Read SECURITY.md**: Understand the threat model and limitations
@@ -390,8 +469,17 @@ pip install -e .
 
 ### GUI won't start
 
-- Make sure tkinter is installed (usually comes with Python)
-- On Linux, you may need: `sudo apt-get install python3-tk`
+- Make sure PySide6 is installed: `pip install -e .` installs it
+
+### "This vault is open in another Faraday window"
+
+Only one Faraday window or CLI command can have a vault open for writing. Lock or close the other one.
+If Faraday crashed, the lock is released automatically.
+
+### "The vault file was changed by another program"
+
+Faraday refuses to overwrite a vault that changed on disk after it was opened (for example by a sync
+tool). Lock and unlock again to load the current file. Nothing was lost; earlier versions are in `<vault>.backups/`.
 
 ### Can't unlock vault
 
@@ -405,26 +493,20 @@ pip install -e .
 
 ```
 faraday/
-├── __init__.py          # Package initialization
-├── __main__.py          # Entry point
-├── cli.py               # Command-line interface
-├── generator/           # Password generator
-│   └── password.py
-├── gui/                 # Graphical interface
-│   ├── main_window.py
-│   ├── crypto_section.py
-│   ├── credential_section.py
-│   ├── password_generator.py
-│   ├── vault_history.py
-│   └── ...
-├── models/              # Data models
-│   ├── entry.py
-│   ├── crypto_entry.py
-│   └── credential_entry.py
-└── vault/               # Vault management
-    ├── manager.py
-    ├── crypto.py
-    └── storage.py
+|-- __main__.py          # Entry point (CLI and `gui`)
+|-- cli.py               # Command-line interface
+|-- paths.py, settings.py, recent.py, pin.py, threat_model.py, access_log.py, totp.py
+|-- generator/           # Password and passphrase generator (+ EFF wordlist)
+|-- models/              # Entry models and schema.py (field specs for every type)
+|-- vault/               # Core: manager, crypto, atomic writes, file lock, backups
+|-- transfer/            # Importers (Bitwarden, KeePass) and encrypted .faraday archives
+|-- qt/                  # PySide6 desktop app
+|   |-- app.py, main_window.py, context.py, theme.py, icons.py
+|   |-- services/        # VaultService, clipboard, idle lock, PIN guard, workers
+|   |-- views/           # unlock, shell, entries, palette and the tool pages
+|   `-- widgets/         # shared widgets and dialogs
+packaging/               # PyInstaller spec, icon, build and install scripts
+tests/                   # pytest suite (core and offscreen GUI tests)
 ```
 
 ### Running from Source
@@ -438,7 +520,14 @@ python -m faraday list
 
 # Run GUI
 python -m faraday gui
+
+# Run the tests
+pip install -r requirements-dev.txt
+python -m pytest
 ```
+
+Tests never touch real vaults; a guard in `tests/conftest.py` fails any test that reaches `Documents\Faraday`.
+For manual runs against a throwaway vault, point `FARADAY_VAULTS_DIR` and `FARADAY_APPDATA` at a scratch folder.
 
 ## License
 
@@ -470,4 +559,4 @@ For bug reports, feature requests, security issues, or contributions, please use
 
 ---
 
-**Note**: Your vault is encrypted with AES-256-GCM and Argon2id. If you lose your master password, the data is cryptographically unrecoverable — there is no backdoor by design. Maintain secure backups and safeguard your master password.
+**Note**: Your vault is encrypted with AES-256-GCM and Argon2id. If you lose your master password, the data is cryptographically unrecoverable: there is no backdoor by design. Maintain secure backups and safeguard your master password.

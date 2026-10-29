@@ -61,7 +61,7 @@ Project Faraday supports multiple security levels that balance security and perf
 - **High**: Enhanced security for sensitive data, slower unlock times
 - **Maximum**: Maximum security, significantly slower unlock times but strongest protection
 
-New vaults use the "standard" level by default. Existing vaults with older parameters continue to work (backward compatible). You can upgrade a vault using the `upgrade-vault` command.
+New vaults use the "standard" level by default. Existing vaults with older parameters continue to work (backward compatible). You can upgrade a vault using the `upgrade-vault` command. It re-encrypts the vault with a fresh salt, keeps the previous version as a snapshot, and refuses to run on vaults with document attachments (their keys derive from the master key and are not re-encrypted yet).
 
 ## Offline-Only Design
 
@@ -95,6 +95,33 @@ The application verifies permissions when unlocking vaults and warns if permissi
 - **SSD**: May be less effective due to wear-leveling and TRIM operations
 - **Full-disk encryption**: Recommended for maximum protection
 
+### Data Safety
+
+- **Crash-safe saves**: every save writes a temporary file, flushes it to disk, then atomically replaces the vault. A crash or power cut leaves either the old or the new vault, never a half-written one.
+- **Automatic snapshots**: before every save, the previous encrypted vault is kept in `<vault>.backups/` (the 10 newest plus one per day for 14 days, configurable). Snapshots are the same ciphertext as the vault and need the master password to open.
+- **One writer at a time**: a lock file (`<vault>.lock`) stops two Faraday windows, or a window and the CLI, from writing the same vault. The operating system releases it if Faraday crashes.
+- **No silent overwrites**: if the vault file changes on disk after it was opened (for example by a sync tool), Faraday refuses to save over it.
+- **Rollback**: if a save fails, the change is undone in memory as well, so what you see matches what is on disk.
+- **Forward compatible**: fields and entry types written by a newer Faraday are preserved, never dropped.
+
+### Clipboard and Screen
+
+- Copied secrets are cleared after a configurable delay (default 30 seconds), only if the clipboard still holds them, and when the vault locks.
+- On Windows, copied secrets are flagged so they stay out of clipboard history (Win+V), cloud clipboard sync and clipboard monitors.
+- Secrets stay masked until revealed, and hide again after a configurable delay.
+- Optional: hide the Faraday window from screenshots and screen sharing (Settings > Behaviour).
+
+### Locking
+
+- The GUI locks after a configurable idle time (default 5 minutes), when Windows locks or sleeps, and optionally when minimized.
+- Locking closes every dialog, destroys every page holding secrets, and clears the clipboard if it still holds a copied secret.
+- An optional action PIN guards revealing, copying, editing, deleting and exporting. After 5 wrong PINs only the master password is accepted until the next unlock. Restoring backups, clearing the access log, changing the PIN, turning auto-lock off and exporting everything always require the master password. The PIN is convenience friction, not strong authentication.
+
+### Import and Export
+
+- Exports from other password managers are plain text. After importing one, Faraday offers to securely delete the file.
+- Faraday never writes secrets to an unencrypted file. Its only full export is a `.faraday` archive protected by a password you choose (Argon2id and AES-256-GCM, the same as the vault).
+
 ### Enhanced Memory Clearing
 
 - **Multiple overwrite passes**: Sensitive data is overwritten 3 times before clearing
@@ -105,8 +132,8 @@ The application verifies permissions when unlocking vaults and warns if permissi
 
 1. **Use a strong master password**: Use a long, unique password (20+ characters recommended) that you can remember (or store in a separate secure location)
 2. **Choose appropriate security level**: Use "standard" or "high" for sensitive data, "maximum" for highly sensitive data
-3. **Back up your vault file**: Store encrypted backups in multiple secure locations
-4. **Lock the vault when not in use**: The vault auto-locks after 5 minutes of inactivity
+3. **Back up your vault file**: Automatic snapshots protect against mistakes on this PC; also export a full backup (Backups page or `faraday backup <folder>`) to another drive
+4. **Lock the vault when not in use**: The vault auto-locks after a configurable idle time (default 5 minutes) and when Windows locks; Ctrl+L locks immediately
 5. **Use full-disk encryption**: Encrypt your entire disk (BitLocker, FileVault, LUKS, etc.) for additional protection
 6. **Keep your system secure**: Use antivirus, keep your OS updated, and be cautious about what software you install
 7. **Don't share your master password**: Anyone with your master password can decrypt your vault

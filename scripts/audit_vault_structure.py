@@ -91,7 +91,12 @@ def audit(path: str) -> None:
 
 
 if __name__ == "__main__":
-    p = sys.argv[1] if len(sys.argv) > 1 else os.path.join("vaults", "Main.vault")
+    if len(sys.argv) > 1:
+        p = sys.argv[1]
+    else:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from faraday.paths import default_vaults_dir
+        p = str(default_vaults_dir(create=False) / "Main.vault")
     if not os.path.isfile(p):
         print("Not found:", p)
         sys.exit(1)

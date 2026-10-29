@@ -2,6 +2,43 @@
 
 All entries are newest-first. Project Faraday is developed and maintained by Pure Tech (MIT licensed).
 
+## Unreleased
+
+### New desktop app (PySide6)
+- `faraday gui` now opens a new Qt desktop app. The old Tkinter GUI has been removed.
+- Live two-factor codes: two-factor items with an authenticator secret (base32 or `otpauth://`) show the current code with a countdown.
+- Import from Bitwarden (.json, .csv), KeePass 2 (.xml, .csv), KeePassXC (.csv), another Faraday vault, or a `.faraday` archive, with preview, duplicate detection and an offer to securely delete the plain-text export afterwards.
+- Encrypted export: one password-protected `.faraday` archive holding every item and document. There is no plain-text export.
+- Logins gain optional Website and Notes fields (only written when set, so existing entries are unchanged on disk).
+- Windows app: `packaging\build.ps1` builds a standalone `Faraday.exe`; `packaging\install.ps1` installs it per user with a Start Menu shortcut.
+- One list and detail view for every entry type, plus **All items**. Every field can be copied, and every secret can be revealed (it masks itself again after a configurable delay).
+- Forms are built from a single field schema (`faraday/models/schema.py`), with inline validation and warnings. Edits keep the entry's id, created time and any fields this version does not know about.
+- Command palette (Ctrl+K) searches items and commands. Shift+Enter copies an item's main secret.
+- A standalone password and passphrase generator (8 to 128 characters, or 3 to 12 words from the EFF large wordlist) that also works while the vault is locked.
+- New Overview dashboard with vault health checks: weak and reused passwords, expiring cards, and snapshot age.
+- Themes: all 11 classic themes are back as full themes (Classic dark and light, Twilight, Graphite, Poly, Forest, New Vegas, Spiral, Sunset, High contrast, Paper), plus Faraday dark and light and Match Windows, chosen from a visual gallery in Settings or the command palette. Your 3.0 theme and text size carry over automatically.
+- New Settings page: auto-lock delay, clipboard clear delay, reveal delay, action PIN, theme, accent colour, text size, tray, lock on minimize, lock when Windows locks, and hiding the window from screen capture.
+- New pages: Backups (restore snapshots, export a verified full backup), Access log and Threat model.
+- Auto-lock now clears the screen. Locking closes dialogs, destroys every page, and clears the clipboard if it still holds a copied secret.
+- Copied secrets are kept out of Windows clipboard history and cloud clipboard.
+- One consistent PIN policy for every sensitive action. After 5 wrong PINs only the master password is accepted until the next unlock.
+- Key derivation and disk writes run in the background, so the window never freezes.
+- Single instance: launching Faraday again brings the open window to the front.
+
+### Vault safety (core)
+- Saves are crash-safe: temp file, fsync, then an atomic replace, with retries when antivirus briefly holds the file.
+- Every save first keeps an encrypted snapshot of the previous version in `<vault>.backups/` (the 10 newest, plus one per day for 14 days).
+- Saves use the salt and key settings captured at unlock. A vault file changed by another program is no longer silently overwritten.
+- A lock file stops two Faraday windows, or a window and the CLI, from writing the same vault at once.
+- A failed save rolls the in-memory changes back. Deleting a document wipes its file only after the vault has saved.
+- Unknown fields and entry types written by newer versions are preserved instead of dropped.
+- `upgrade-vault` re-keys safely and refuses when document attachments exist (previously it made them unreadable).
+- New CLI commands: `backup`, `list-backups`, `restore`, and `generate --words`. `delete-vault --secure` now asks you to type the file name.
+- The default vault folder is now `Documents\Faraday` instead of `vaults` in the launch folder. A bare `--vault name.vault` on the command line means a file there.
+- Recent vaults, settings, PIN and access log all live in `%LOCALAPPDATA%\FaradayVault`. The old recent-vaults file is imported once.
+- The file format is unchanged (version 1). Vaults stay fully compatible with 3.0 in both directions.
+- New automated test suite (`python -m pytest`), including compatibility checks against a vault written by 3.0.
+
 ## Version 3.0.0 - July 11, 2026
 
 This release is a **presentation-only GUI redesign**. There are no changes to
@@ -18,7 +55,7 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
     rebuilds the wrapper HWND as an unowned `WS_CHILD` child-of-desktop, so the
     modal password dialog was created with no owner, could not be activated,
     never received focus, and sank behind the main window while holding a modal
-    grab — every click was swallowed. Diagnostics showed window style
+    grab; every click was swallowed. Diagnostics showed window style
     `0x56000008` (`WS_CHILD`), owner `0x0`, z-order far behind the main window,
     and CPU at ~0.5% (the app was deaf, not hung). The access log recorded 17
     sessions with 20 `unlock_cancelled` and 0 `unlock_succeeded`.
@@ -27,7 +64,7 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
     `__init__`, `fit()`, and `show()`; moved `grab_set()` to the end of
     construction (wrapped so a half-built dialog can never leak a grab); clamped
     `_center_over` to the work area (a minimized parent previously spawned an
-    off-screen dialog — the same freeze); wrapped `_prompt_password` in
+    off-screen dialog; the same freeze); wrapped `_prompt_password` in
     `try/finally`; fixed the `native_dialog` topmost-restore; and re-applied the
     taskbar style after `overrideredirect` toggles.
   - Added `scripts/check_dialog_stacking.py`, a Win32 z-order +
@@ -42,9 +79,9 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
   - **Radii:** `sm = 6`, `md = 10`, `lg = 14` px for surfaces, cards, and
     inputs.
   - **Typography roles:** a system font stack (`Segoe UI` / `.SF NS Text` /
-    `Cantarell`/`DejaVu Sans`) with named roles — `display` (20 bold),
+    `Cantarell`/`DejaVu Sans`) with named roles; `display` (20 bold),
     `title` (15 semibold), `body` (13), `caption` (11 muted), and `mono` for
-    secrets — all hooked into the existing `font_scale` (90–130).
+    secrets; all hooked into the existing `font_scale` (90–130).
   - **Semantic tokens** derived from the merged palette (`surface`, `hover`,
     `on_accent`, etc.) provide a single source of truth for every widget.
 
@@ -59,15 +96,15 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
   - **Scrollable content area** plus a **status bar** showing the active vault.
 
 ### Shared component library (`faraday/gui/widgets/`)
-- **Surfaces** — `RoundedSurface` (recolorable canvas-backed rounded card),
+- **Surfaces**: `RoundedSurface` (recolorable canvas-backed rounded card),
   `Panel`.
-- **Inputs** — `SearchBar`, `PrimaryButton`, `GhostButton`, `DangerButton`,
+- **Inputs**: `SearchBar`, `PrimaryButton`, `GhostButton`, `DangerButton`,
   `IconButton`, `LabeledEntry`, `SecretField` (reveal toggle + copy), and
   `LabeledText`.
-- **Feedback** — `EmptyState`, inline `Toast`/status, and `ConfirmDialog`.
-- **Lists** — `CardList`, `EntryCard` (title/subtitle/meta with
+- **Feedback**: `EmptyState`, inline `Toast`/status, and `ConfirmDialog`.
+- **Lists**: `CardList`, `EntryCard` (title/subtitle/meta with
   copy/edit/delete actions), and `SectionHeader` (title + item count + "Add").
-- **Themed dialogs** — `Dialog` base, `UnlockScreen`, `ThemedPasswordDialog`
+- **Themed dialogs**: `Dialog` base, `UnlockScreen`, `ThemedPasswordDialog`
   (reveal + generate), `AboutDialog`, and the restyled `ThemeSettingsDialog`.
 - All widgets read tokens from the design system and recolor live via
   `apply_theme`, registered through the themed-widget registry.
@@ -87,7 +124,7 @@ backend (`faraday/vault/`, `faraday/models/`, `faraday/generator/`,
 
 ### Post-release UI fixes
 A presentation-only fix pass applied after the 3.0.0 release. **No version
-change** (product remains 3.0.0) and **no cryptography or behavior changes** —
+change** (product remains 3.0.0) and **no cryptography or behavior changes**:
 `VaultManager`, models, generator, and CLI are untouched.
 - Fixed invisible/unreadable labels (black-on-dark text) in dialogs and inputs
   by theming `tk` widget backgrounds to the active palette.
